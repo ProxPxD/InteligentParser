@@ -1,14 +1,14 @@
 import abc
 import unittest
 
-from ..src.intelligentParser import IntelligentParser
-from ..src.intelligentParserCreator import IntelligentParserCreator
+from ..src.parser import Parser
+from ..src.parserCreator import ParserCreator
 
 
 class AbstractTest(unittest.TestCase, abc.ABC):
 
-    parser: IntelligentParser = None
-    parserCreator: IntelligentParserCreator = None
+    parser: Parser = None
+    parserCreator: ParserCreator = None
     half_sep_length = 40
     currentResult = None
 

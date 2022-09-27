@@ -2,7 +2,7 @@ from .modeManager import FlagsManager
 from .parsingException import ParsingException
 
 
-class IntelligentParser:
+class Parser:
 
     def __init__(self, args: list[str]):
         self._args: list[str] = args[1:]
