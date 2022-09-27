@@ -1,25 +1,25 @@
 import functools
 from typing import Callable, Generator, Any
 
-from src.translating.argumentParsing.layoutAdjusting import layoutAdjusterFactory
-from src.translating.configs.configurations import Configurations, Configs
-from .constants import ValidationErrors, Messages, SHORT_FLAGS, short_to_usual_flags_dict, FLAGS, ModeTypes, \
+from ...constants import ValidationErrors, Messages, SHORT_FLAGS, short_to_usual_flags_dict, FLAGS, ModeTypes, \
     mode_types_to_modes, \
     modes_to_arity_dict, flag_to_description_dict
+from ...layoutAdjusting import layoutAdjusterFactory
+from ....configs.configurations import Configurations, Configs
 
 
-class ModesManager:  # TODO: create a mode filter class. Consider creating a subpackage
+class FlagsManager:  # TODO: create a mode filter class. Consider creating a subpackage
 
     @staticmethod
     def show_help() -> None:
-        ModesManager._show_syntax()
-        ModesManager._show_modes()
+        FlagsManager._show_syntax()
+        FlagsManager._show_modes()
 
     @staticmethod
     def _show_syntax() -> None:
-        ModesManager._print_syntax_instruction()
+        FlagsManager._print_syntax_instruction()
         print()
-        ModesManager._print_modes_description()
+        FlagsManager._print_modes_description()
         print()
 
     @staticmethod
@@ -58,7 +58,7 @@ class ModesManager:  # TODO: create a mode filter class. Consider creating a sub
             mode_string += ' ' * (space_1 - len(mode_string)) + short_flag
             mode_string += ' ' * (space_2 - len(mode_string)) + f':{name}'
             if description:
-                indented_description = ModesManager._separate_with_indentation(description, indent_length=space_3+3, max_text_len=max_text_len)
+                indented_description = FlagsManager._separate_with_indentation(description, indent_length=space_3 + 3, max_text_len=max_text_len)
                 mode_string += ' ' * (space_3 - len(mode_string)) + f':- {indented_description}'
             print(mode_string)
 
@@ -147,12 +147,12 @@ class ModesManager:  # TODO: create a mode filter class. Consider creating a sub
     def _is_mode_setter(self, mode: str, arg_index: int, args: list[str]):
         return self._is_mode_of_configurational(mode) and arg_index < len(args) and self._is_mode_of_translational(args[arg_index])
 
-    def validate_modes(self) -> list[str]:
+    def validate_modes(self) -> tuple[bool, list[str]]:
         error_messages = []
         if not self._valid_translational_mode():
             msg = ValidationErrors.MULTI_TRANSLATION_MODES_ON.format()
             error_messages.append(msg)
-        return error_messages
+        return not bool(error_messages), error_messages
 
     def _valid_translational_mode(self) -> bool:
         num_modes_tuened_on = sum(1 for mode in self._modes if mode in self.get_modes_turned_on_by_type(ModeTypes.TRANSLATIONAL))
