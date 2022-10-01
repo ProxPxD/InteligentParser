@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Type, Iterator
+from typing import Type, Iterator, Callable
 
 from .abstractNode import AbstractNode
 from .flag import Flag
+from .hiddenNode import HiddenNode
 from .parameter import Parameter
 from ..parsingException import ParsingException
 
@@ -23,13 +24,31 @@ class Node(AbstractNode):  # TODO think of splitting the responsibilities
         self._sub_nodes: dict[str, Node] = {}
         self._flags: dict[str, Flag] = {}
         self._params: dict[str, Parameter] = {}
+        self._hidden_nodes: dict[str, HiddenNode] = {}
         self._syntaxes: dict[int, list[str]] = {}
         self._optional_parameters = []
 
-    def add_node(self, to_add: str | Node) -> None:
+    def add_node(self, to_add: str | Node) -> Node:
         return self._add_any_node(to_add, self._sub_nodes, Node)
 
-    def add_flag(self, to_add: str | Flag) -> Flag:
+    def add_hidden_node(self, to_add: str | Node, condition: Callable[[], bool]):
+        node = self._add_any_node(to_add, self._hidden_nodes, HiddenNode)
+        node.set_condition(condition)
+        return node
+
+    def _get_active_hidden_nodes(self):
+        return (node for node in self._hidden_nodes.values() if node.is_condition_met())
+
+    def has_active_hidden_node(self):
+        return next(self._get_active_hidden_nodes(), None) is not None
+
+    def get_active_hidden_node(self):
+        active = list(self._get_active_hidden_nodes())
+        if len(active) > 1:
+            raise ParsingException
+        return active[1] if active else None
+
+    def add_flag(self, to_add: str | Flag, arity) -> Flag:
         return self._add_any_node(to_add, self._flags, Flag)
 
     def get(self, name: str):

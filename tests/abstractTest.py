@@ -1,13 +1,13 @@
 import abc
 import unittest
 
-from src.translating.argumentParsing.abstractParsing.src.nodes.root import Root
-from ..src.parser import Parser
+from ..src.nodes.root import Root
+from ..src.parserB import ParserB
 
 
 class AbstractTest(unittest.TestCase, abc.ABC):
 
-    parser: Parser = None
+    parser: ParserB = None
     parserCreator: Root = None
     half_sep_length = 40
     currentResult = None

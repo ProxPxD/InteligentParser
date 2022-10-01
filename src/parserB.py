@@ -41,6 +41,10 @@ class ParserB:
             yield curr_node
             i += 1
 
+        while curr_node.has_active_hidden_node():
+            curr_node = curr_node.get_active_hidden_node()
+            yield curr_node
+
     def _get_node_args(self, args: list[str]) -> list[str]:
         return args[len(self._active_nodes)-1:]
 
