@@ -1,9 +1,9 @@
 import unittest
 
-
+from tests.glosbeTranslatorTest import GlosbeTranslatorTest
 
 tests = [
-
+    GlosbeTranslatorTest
 ]
 
 

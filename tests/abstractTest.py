@@ -7,8 +7,8 @@ from ..src.parserB import ParserB
 
 class AbstractTest(unittest.TestCase, abc.ABC):
 
-    parser: ParserB = None
-    parserCreator: Root = None
+    parser: ParserB | None = None
+    root: Root | None = None
     half_sep_length = 40
     currentResult = None
 
@@ -23,9 +23,16 @@ class AbstractTest(unittest.TestCase, abc.ABC):
     def setUpClass(cls) -> None:
         cls.print_sep_with_text(f'Starting {cls._get_test_name()} tests!')
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.root = None
+
     def setUp(self) -> None:
         super().setUp()
         print('- ', self.get_method_name(), end=' ... ')
+
+    def get_method_name(self) -> str:
+        return self.id().split('.')[-1]
 
     def tearDown(self) -> None:
         super().tearDown()
@@ -46,5 +53,6 @@ class AbstractTest(unittest.TestCase, abc.ABC):
     def _get_test_name(cls) -> str:
         return 'unnamed'
 
-    def get_method_name(self) -> str:
-        return self.id().split('.')[-1]
+    @abc.abstractmethod
+    def test_create_correct_cli(self) -> None:
+        pass

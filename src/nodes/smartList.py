@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from types import GeneratorType
 
 
 class SmartList(list):
 
-    def __init__(self, to_list=None, limit: int = None):
+    def __init__(self, *to_list, limit: int = None):
         super().__init__()
-        self._limit = limit if limit is not None else 0
-        if isinstance(to_list, (GeneratorType, map, Iterable)):
-            to_list = list(to_list)
+        self._limit = limit
         if to_list:
             self.extend(to_list)
 
@@ -31,9 +28,9 @@ class SmartList(list):
     def get_limit(self):
         return self._limit
 
-    def set_limit(self, limit: int):
+    def set_limit(self, limit: int | None):
         self._limit = limit
-        if len(self) >= limit:
+        if limit is not None and len(self) >= limit:
             self[:] = self[:limit]
 
     def _remove_nones(self, to_filter: Iterable):
@@ -59,7 +56,7 @@ class SmartList(list):
         super(SmartList, self).extend(__iterable)
 
     def _is_limited(self) -> bool:
-        return self._limit > 0
+        return self._limit is not None
 
     def _get_free_space(self):
         return self._limit - len(self)
