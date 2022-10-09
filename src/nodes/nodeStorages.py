@@ -10,10 +10,10 @@ from src.parsingException import ParsingException
 default_type = str | int | list[str | int] | None
 
 
-class DefaultSmartStorage(DefaultStorage, SmartList):
+class DefaultSmartStorage(DefaultStorage, SmartList, IName):
 
     def __init__(self, limit: int = None, *, default=None, name=''):
-        self.name = name
+        IName.__init__(self, name)
         SmartList.__init__(self, limit=limit)
         DefaultStorage.__init__(self, default)
 
@@ -22,8 +22,8 @@ class DefaultSmartStorage(DefaultStorage, SmartList):
             flag.when_active_add_name_to(self)
 
     def get(self):
-        to_get = self if self else super().get()
-        return to_get[0] if isinstance(to_get, Sized) and len(to_get) == 1 else SmartList(to_get)
+        to_get = SmartList(self if self else super().get())
+        return to_get[0] if isinstance(to_get, list) and len(to_get) == 1 else SmartList(to_get)
 
     def has_flag(self, flag: Flag | str):
         return str(flag) in self
@@ -45,7 +45,7 @@ class FinalNode(IDefaultStorable, IName):
         self._storage = storage
 
     def set_limit(self, limit: int | None, *, storage: DefaultSmartStorage = None) -> None:
-        if storage:
+        if storage is not None:
             self.set_storage(storage)
         self._limit = limit
 
@@ -70,8 +70,8 @@ class FinalNode(IDefaultStorable, IName):
     def set_storage(self, storage: DefaultSmartStorage):
         self._storage = storage
 
-    def has_name(self, name: str):
-        return name == self.name
+    def get_storage(self) -> DefaultStorage:
+        return self._storage
 
     def set_type(self, type: Callable | None) -> None:
         self._storage.set_type(type)

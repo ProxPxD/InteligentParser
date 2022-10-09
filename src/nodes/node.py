@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import itertools
-from typing import Type, Iterator, Callable, Iterable
+from typing import Type, Iterator, Callable, Iterable, Any
 
 from src.nodes.iName import IName
 from src.nodes.nodeStorages import Flag, Parameter, DefaultSmartStorage
@@ -24,16 +24,18 @@ class Node(IName):  # TODO think of splitting the responsibilities
         IName.__init__(self, name)
         self._nodes: dict[str, Node] = {}
         self._hidden_nodes: dict[str, HiddenNode] = {}
-        self._params: dict[str, Parameter] = {}
         self._flags: dict[str, Flag] = {}
+        self._params: dict[str, Parameter] = {}
         self._collections: dict[str, DefaultSmartStorage] = {}
         self._orders: dict[int, list[str]] = {}
+        self._default_order: list[str] = []
         self._only_hidden = False
 
     def _get_save(self, name: str, from_dict: dict[str, stored_by_name]) -> stored_by_name:
-        if name not in from_dict:
-            raise ValueError(f'Name {name} does not belong to {self.name} ')
-        return from_dict[name]
+        to_return = self._get_stored_by_name(name, from_dict)
+        if to_return is not None:
+            return to_return
+        raise ValueError(f'Name {name} does not belong to {self.name} ')
 
     def _put_in_collection(self, to_put: stored_by_name, collection: dict[str, stored_by_name]):
         if to_put.name in collection:
@@ -61,9 +63,13 @@ class Node(IName):  # TODO think of splitting the responsibilities
             raise ValueError
         return result
 
-    def _get_stored_by_name(self, name: str) -> stored_by_name | None:
-        from_dicts = self._get_stored_by_name_collections()
-        return next((from_dict[name] for from_dict in from_dicts if name in from_dict), None)
+    def _get_stored_by_name(self, name: str, from_dict: dict[str, stored_by_name] = None) -> stored_by_name | None:
+        from_dicts = [from_dict] if from_dict else self._get_stored_by_name_collections()
+        for dict in from_dicts:
+            for elem in dict.values():
+                if elem.has_name(name):
+                    return elem
+        return None
 
     def _get_stored_by_name_collections(self) -> list[dict[str, stored_by_name]]:
         return [self._nodes, self._hidden_nodes, self._params, self._flags]
@@ -80,9 +86,13 @@ class Node(IName):  # TODO think of splitting the responsibilities
         flag.add_alternative_names(*alternative_names)
         flag.set_storage(storage if storage else DefaultSmartStorage(storage_limit, default=default))
         flag.set_limit(flag_limit)
-        return self._put_in_collection(flag, self._nodes)
+        return self._put_in_collection(flag, self._flags)
+
+    def get_all_flags(self) -> list[Flag]:
+        return list(self._flags.values())
 
     def get_flag(self, name: str) -> Flag:
+
         return self._get_save(name, self._flags)
 
     def set_params(self, *parameters: str | DefaultSmartStorage, storages: tuple[DefaultSmartStorage, ...] = ()) -> None:
@@ -108,6 +118,9 @@ class Node(IName):  # TODO think of splitting the responsibilities
     def add_collection(self, name: str, limit: int = None) -> DefaultSmartStorage:
         collection = DefaultSmartStorage(limit, name=name)
         return self._put_in_collection(collection, self._collections)
+
+    def get_collection(self, name: str):
+        return self._get_save(name, self._collections)
 
     def add_hidden_node(self, to_add: str | Node, active_condition: Callable[[], bool] = None) -> HiddenNode:
         self._hidden_nodes[to_add] = HiddenNode(to_add, active_condition)
@@ -153,7 +166,7 @@ class Node(IName):  # TODO think of splitting the responsibilities
         return self._has_in_collection(hidden_node, self._hidden_nodes)
 
     def set_params_order(self, line: str) -> None:
-        params = line.split(' ')
+        params = line.split(' ') if len(line) else []
         count = len(params)
         if count in self._orders:
             raise ValueError
@@ -168,10 +181,15 @@ class Node(IName):  # TODO think of splitting the responsibilities
     def _get_obligatory_params_count(self):
         return len(self._params) - self._get_optional_params_count()
 
-    def set_allowed_params_default_order(self, *params: str | Parameter):
-        raise NotImplemented
+    def set_allowed_params_default_order(self, *params: str | Parameter, defaults: list[Any] = None):
+        defaults = defaults or []
+        for param, default in itertools.zip_longest(params, defaults):
+            name = str(param)
+            self._default_order.append(name)
+            if default is not None:
+                self.get_param(name).set_default(default)
 
-    ### Parsing?
+    ### Parsing
 
     def filter_flags_out(self, args: list[str]) -> list[str]:
         chunks = self._chunk_by_flags(args)

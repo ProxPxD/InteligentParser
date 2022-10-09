@@ -15,7 +15,9 @@ class IDefaultStorable(abc.ABC):
         raise NotImplemented
 
     def set_default(self, default: Any) -> None:
-        self.set_get_default(lambda: default)
+        if not isinstance(default, Callable):
+            default = lambda: default
+        self.set_get_default(default)
 
     def set_get_default(self, get_default: Callable) -> None:
         self.add_get_default_if(get_default, lambda: True)
@@ -91,6 +93,9 @@ class DefaultStorage(IDefaultStorable):
         Takes None if there shouldn't be any type control (default)
         '''
         self._type = type
+
+    def get_type(self) -> Callable:
+        return self._type
 
     def add_get_default_if_and(self, get_default: Callable[[], Any], *conditions: Callable[[], bool]):
         condition = IActive.merge_conditions(conditions, all)
