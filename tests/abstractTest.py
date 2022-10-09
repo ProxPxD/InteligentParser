@@ -1,8 +1,8 @@
 import abc
 import unittest
 
-from ..src.nodes.root import Root
-from ..src.parserB import ParserB
+from src.nodes.node import Root
+from src.parserB import ParserB
 
 
 class AbstractTest(unittest.TestCase, abc.ABC):

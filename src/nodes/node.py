@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Type, Iterator, Callable
+import itertools
+from typing import Type, Iterator, Callable, Iterable
 
-from src.nodes.abstractNode import AbstractNode
-from src.nodes.flag import Flag
-from src.nodes.hiddenNode import HiddenNode
-from src.nodes.nodeCollection import NodeCollection
-from src.nodes.parameter import Parameter
+from src.nodes.iName import IName
+from src.nodes.nodeStorages import Flag, Parameter, DefaultSmartStorage
+from src.nodes.smartList import SmartList
+from src.nodes.storages import IActive, compositeActive, active, bool_func
 from src.parsingException import ParsingException
 
 
@@ -18,107 +18,160 @@ def flatten_once(func):
     return lambda to_flatten: (elem for lst in func() for elem in lst)
 
 
-class Node(AbstractNode):  # TODO think of splitting the responsibilities
+class Node(IName):  # TODO think of splitting the responsibilities
 
     def __init__(self, name: str):
-        super().__init__(name)
+        IName.__init__(self, name)
         self._nodes: dict[str, Node] = {}
         self._hidden_nodes: dict[str, HiddenNode] = {}
         self._params: dict[str, Parameter] = {}
         self._flags: dict[str, Flag] = {}
-        self._collections: dict[str, NodeCollection] = {}
+        self._collections: dict[str, DefaultSmartStorage] = {}
         self._orders: dict[int, list[str]] = {}
         self._only_hidden = False
 
+    def _get_save(self, name: str, from_dict: dict[str, stored_by_name]) -> stored_by_name:
+        if name not in from_dict:
+            raise ValueError(f'Name {name} does not belong to {self.name} ')
+        return from_dict[name]
+
+    def _put_in_collection(self, to_put: stored_by_name, collection: dict[str, stored_by_name]):
+        if to_put.name in collection:
+            type_name = to_put.__class__.__name__.__str__()
+            raise ValueError(f'{type_name} {to_put.name} already exists in {self._name}')
+        collection[to_put.name] = to_put
+        return to_put
+
+    def _has_in_collection(self, node: str | stored_by_name, from_dict: dict[str, stored_by_name]) -> bool:
+        if isinstance(node, stored_by_name):
+            node = node.name
+        if not isinstance(node, str):
+            return False
+        return node in from_dict
+
+    def has(self, to_check: str | stored_by_name) -> bool:
+        if isinstance(to_check, stored_by_name):
+            to_check = to_check.name
+        result = self._get_stored_by_name(to_check)
+        return result is not None
+
+    def get(self, name: str):
+        result = self._get_stored_by_name(name)
+        if result is None:
+            raise ValueError
+        return result
+
+    def _get_stored_by_name(self, name: str) -> stored_by_name | None:
+        from_dicts = self._get_stored_by_name_collections()
+        return next((from_dict[name] for from_dict in from_dicts if name in from_dict), None)
+
+    def _get_stored_by_name_collections(self) -> list[dict[str, stored_by_name]]:
+        return [self._nodes, self._hidden_nodes, self._params, self._flags]
+
     def add_node(self, to_add: str | Node) -> Node:
-        return self._add_any_node(to_add, self._nodes, Node)
+        node = create_iname(to_add, Node)
+        return self._put_in_collection(node, self._nodes)
 
-    def set_only_hidden_nodes(self) -> Node:
-        self._only_hidden = True
+    def get_node(self, name: str) -> Node:
+        return self._get_save(name, self._nodes)
 
-    def add_collection(self, name: str, limit: int = None) -> NodeCollection:
-        self._collections[name] = NodeCollection(limit)
-        self._collections[name].set_limit(limit)
-        return self._collections[name]
+    def add_flag(self, main: str | Flag, *alternative_names: str, storage: DefaultSmartStorage = None, storage_limit=0, flag_limit=None, default=None) -> Flag:
+        flag = create_iname(main, Flag)
+        flag.add_alternative_names(*alternative_names)
+        flag.set_storage(storage if storage else DefaultSmartStorage(storage_limit, default=default))
+        flag.set_limit(flag_limit)
+        return self._put_in_collection(flag, self._nodes)
+
+    def get_flag(self, name: str) -> Flag:
+        return self._get_save(name, self._flags)
+
+    def set_params(self, *parameters: str | DefaultSmartStorage, storages: tuple[DefaultSmartStorage, ...] = ()) -> None:
+        for param, storage in itertools.zip_longest(parameters, storages):
+            self.add_param(param, storage)
+
+    def add_param(self, to_add: str | Parameter | DefaultSmartStorage, storage: DefaultSmartStorage = None) -> Parameter:
+        if storage is not None and isinstance(to_add, DefaultSmartStorage):
+            raise ValueError
+
+        if isinstance(to_add, DefaultSmartStorage):
+            storage = to_add
+            to_add = to_add.name
+
+        param = create_iname(to_add, Parameter)
+        if storage is not None:
+            param.set_storage(storage)
+        return self._put_in_collection(param, self._params)
+
+    def get_param(self, name: str) -> Parameter:
+        return self._get_save(name, self._params)
+
+    def add_collection(self, name: str, limit: int = None) -> DefaultSmartStorage:
+        collection = DefaultSmartStorage(limit, name=name)
+        return self._put_in_collection(collection, self._collections)
 
     def add_hidden_node(self, to_add: str | Node, active_condition: Callable[[], bool] = None) -> HiddenNode:
         self._hidden_nodes[to_add] = HiddenNode(to_add, active_condition)
         return self._hidden_nodes[to_add]
 
-    def _get_active_hidden_nodes(self):
-        return (node for node in self._hidden_nodes.values() if node.is_condition_met())
+    def get_hidden_node(self, name: str) -> HiddenNode:
+        return self._get_save(name, self._hidden_nodes)
 
-    def has_active_hidden_node(self):
+    def set_only_hidden_nodes(self) -> None:
+        self._only_hidden = True
+
+    def _get_active_hidden_nodes(self) -> Iterator[HiddenNode]:
+        return (node for node in self._hidden_nodes.values() if node.is_active())
+
+    def has_active_hidden_node(self) -> bool:
         return next(self._get_active_hidden_nodes(), None) is not None
 
-    def get_active_hidden_node(self):
-        active = list(self._get_active_hidden_nodes())
-        if len(active) > 1:
-            raise ParsingException
-        return active[1] if active else None
-
-    def add_flag(self, main: str | Flag, *alternative_names: str, arity) -> Flag:
-        flag = Flag(main, *alternative_names, max_arity=arity)
-        raise NotImplemented
-
-    def get(self, name: str):
-        from_dicts = [self._nodes, self._params, self._flags]
-        result = next((from_dict[name] for from_dict in from_dicts if name in from_dict), None)
-        if not result:
-            raise KeyError
-        return result
+    def get_active_hidden_node(self) -> HiddenNode:
+        hidden_nodes = self._get_active_hidden_nodes()
+        active = next(hidden_nodes, None)
+        if active is None:
+            raise ParsingException("None hidden node active")
+        if next(hidden_nodes):
+            raise ParsingException("More than one hidden node is active")
+        return active
 
     def __getitem__(self, name: str):
         return self.get(name)
 
-    def get_node(self, name: str) -> Node:
-        return self._get_save(name, self._nodes)
+    def __contains__(self, node: str | stored_by_name):
+        return self.has(node)
 
-    def get_flag(self, name: str) -> Flag:
-        return self._get_save(name, self._flags)
-
-    def get_param(self, name: str) -> Parameter:
-        return self._get_save(name, self._params)
-
-    def __contains__(self, node):
-        return self.has_child_node(node)
-
-    def has_child_node(self, node: str | Node) -> bool:
-        return self._has_any_node_type(node, self._nodes, Node)
+    def has_node(self, node: str | Node) -> bool:
+        return self._has_in_collection(node, self._nodes)
 
     def has_flag(self, flag: str | Flag) -> bool:
-        return self._has_any_node_type(flag, self._flags, Flag)
+        return self._has_in_collection(flag, self._flags)
 
-    def has_child_node_or_flag(self, node: str | Node):
-        return self.has_child_node(node) or self.has_flag(node)
-
-    def is_flag(self, flag: str | Flag):
+    def is_flag(self, flag: str):
         return self.has_flag(flag)
 
-    def _has_any_node_type(self, node: str | AbstractNode, from_dict: dict[str, AbstractNode], my_class: Type[AbstractNode] = None) -> bool:
-        if isinstance(node, str):
-            return node in from_dict.keys()
-        if isinstance(node, my_class):
-            return node in from_dict.values()
-        return False
-
-    def set_params(self, *parameters: str | NodeCollection) -> None:
-        for param in parameters:
-            self.add_param(param)
-
-    def add_param(self, to_add: str | Parameter | NodeCollection) -> Parameter:
-        return self._add_any_node(to_add, self._params, Parameter)
+    def has_hidden_node(self, hidden_node: str | HiddenNode) -> bool:
+        return self._has_in_collection(hidden_node, self._hidden_nodes)
 
     def set_params_order(self, line: str) -> None:
         params = line.split(' ')
-        num = len(params)
-        self._orders[num] = params
+        count = len(params)
+        if count in self._orders:
+            raise ValueError
+        self._orders[count] = params
 
-    def get_optional_params(self) -> list[Parameter]:
-        return [param for param in self._params.values() if param.is_set()]
+    def get_optional_params(self) -> Iterator[Parameter]:
+        return (param for param in self._params.values() if param.is_default_set())
+
+    def _get_optional_params_count(self):
+        return len(list(self.get_optional_params()))
 
     def _get_obligatory_params_count(self):
-        return len(self._params) - len(list(self.get_optional_params()))
+        return len(self._params) - self._get_optional_params_count()
+
+    def set_allowed_params_default_order(self, *params: str | Parameter):
+        raise NotImplemented
+
+    ### Parsing?
 
     def filter_flags_out(self, args: list[str]) -> list[str]:
         chunks = self._chunk_by_flags(args)
@@ -178,3 +231,69 @@ class Node(AbstractNode):  # TODO think of splitting the responsibilities
         param = order[-1]
         for arg in args:
             self.get_param(param).add_to_values(arg)
+
+
+class HiddenNode(Node, IActive):  # TODO: refactor to remove duplications (active and inactive conditions should be a separate class
+
+    def __init__(self, name: str, active_condition: compositeActive = None, inactive_condition: compositeActive = None):
+        super().__init__(name)
+        self._active_conditions = SmartList(IActive._map_to_single(active_condition))
+        self._inactive_conditions = SmartList(IActive._map_to_single(inactive_condition))
+
+    def set_active_on_conditions(self, *conditions: compositeActive, func: bool_func = all):
+        self._active_conditions += IActive._map_to_single(conditions, func=func)
+
+    def set_inactive_on_conditions(self, *conditions: compositeActive, func: bool_func = all):
+        self._inactive_conditions += IActive._map_to_single(conditions, func=func)
+
+    def is_active(self) -> bool:
+        return all(func() for func in self._active_conditions) and not all(func() for func in self._inactive_conditions)
+
+    def set_active(self, first_when: active, *when: compositeActive, but_not: compositeActive = None):
+        self.set_active_and(first_when, *when)
+        if but_not:
+            self.set_inactive_or(*but_not if isinstance(but_not, Iterable) else but_not)
+
+    def set_active_and(self, *when: compositeActive):
+        self.set_active_on_conditions(*when, func=all)
+
+    def set_active_or(self, *when: compositeActive):
+        self.set_active_on_conditions(*when, func=any)
+
+    def set_inactive_and(self, *when: compositeActive):
+        self.set_inactive_on_conditions(*when, func=all)
+
+    def set_inactive_or(self, *when: compositeActive):
+        self.set_inactive_on_conditions(*when, func=any)
+
+    def set_active_on_flags_in_collection(self, collection: DefaultSmartStorage, *flags: Flag, but_not: list[Flag] | Flag = None):
+        but_not = list(but_not) if but_not else []
+        self.set_active_on_conditions(lambda: all((str(flag) in collection for flag in flags)))
+        self.set_inactive_on_conditions(lambda: any((str(flag) in collection for flag in but_not)))
+
+    def set_inactive_on_flags_in_collection(self, collection: DefaultSmartStorage, *flags: Flag):
+        self.set_inactive_on_conditions(lambda: all((str(flag) in collection for flag in flags)))
+
+
+class Root(Node):
+
+    def __init__(self, name: str = 'root'):
+        super().__init__(name)
+
+    def add_global_flag(self, main: str | Flag, *alternative_names: str) -> Flag:
+        return self.add_flag(main, *alternative_names)
+
+    def get_global_flag(self, name: str) -> Flag:
+        return self.get_flag(name)
+
+
+def create_iname(to_create: str | IName, of_type: Type) -> stored_by_name:
+    if isinstance(to_create, stored_by_name):
+        return to_create
+    elif isinstance(to_create, str):
+        return of_type(to_create)
+    else:
+        raise ValueError
+
+
+stored_by_name = Node | HiddenNode | Flag | Parameter | DefaultSmartStorage

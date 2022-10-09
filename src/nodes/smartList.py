@@ -15,7 +15,7 @@ class SmartList(list):
         elems = [elems] if not isinstance(elems, Iterable) or isinstance(elems, str) else elems
         elems = self._remove_nones(elems)
         elems = self._cut_over_limit(elems)
-        self._extend(elems)
+        super().extend(elems)
         return self
 
     def filter_out(self, elems) -> list:
@@ -48,12 +48,6 @@ class SmartList(list):
 
     def extend(self, __iterable: Iterable) -> None:
         self.__iadd__(__iterable)
-
-    def _append(self, __object) -> None:
-        super(SmartList, self).append(__object)
-
-    def _extend(self, __iterable: Iterable) -> None:
-        super(SmartList, self).extend(__iterable)
 
     def _is_limited(self) -> bool:
         return self._limit is not None

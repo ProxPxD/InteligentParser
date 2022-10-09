@@ -1,8 +1,7 @@
 from typing import Iterator
 
 from .flagsManager import FlagsManager
-from .nodes.node import Node
-from .nodes.root import Root
+from .nodes.node import Node, Root
 
 
 class ParserB:
@@ -36,7 +35,7 @@ class ParserB:
     def _get_active_nodes(self) -> Iterator[Node]:
         i, curr_node = 0, self._root
         yield self._root
-        while curr_node.has_child_node(self._args[i]):
+        while curr_node.has_node(self._args[i]):
             curr_node = curr_node.get_node(self._args[i])
             yield curr_node
             i += 1
