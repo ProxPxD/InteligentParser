@@ -138,7 +138,6 @@ class Flag(FinalNode, IActive):
     def has_name(self, name: str):
         return super().has_name(name) or name in self._alternative_names
 
-    ## when_active methods
     def when_active_add_name_to(self, collection: DefaultSmartStorage):
         if not collection:
             return

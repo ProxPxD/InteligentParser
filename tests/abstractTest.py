@@ -2,12 +2,12 @@ import abc
 import unittest
 
 from src.nodes.node import Root
-from src.parserB import ParserB
+from src.cli import Cli
 
 
 class AbstractTest(unittest.TestCase, abc.ABC):
 
-    parser: ParserB | None = None
+    parser: Cli | None = None
     root: Root | None = None
     half_sep_length = 40
     currentResult = None

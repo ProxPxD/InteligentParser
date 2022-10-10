@@ -1,10 +1,9 @@
 from typing import Iterator
 
-from .flagsManager import FlagsManager
 from .nodes.node import Node, Root
 
 
-class ParserB:
+class Cli:
 
     def __init__(self, root: Root, args: list[str] = None):
         self._root: Root = root
@@ -30,6 +29,7 @@ class ParserB:
         node_args = self._get_node_args(self._args)
         node_args = self._action_node.filter_flags_out(node_args)
         self._action_node.parse_node_args(node_args)
+        self._action_node.perform_all_actions()
         return None  # TODO: create return parser object
 
     def _get_active_nodes(self) -> Iterator[Node]:

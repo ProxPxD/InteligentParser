@@ -1,4 +1,5 @@
 from abstractTest import AbstractTest
+from src.cli import Cli
 from src.nodes.node import Root
 
 
@@ -23,7 +24,9 @@ class GlosbeTranslatorTest(AbstractTest):
         return self.langs[:n] if n < len(self.langs) else self.langs
 
     def test_create_correct_cli(self):
-        # Root
+        # ############### #
+        # Parser creation #
+        # ############### #
         root = Root('root')
         root.set_only_hidden_nodes()
         # Collections
@@ -100,15 +103,22 @@ class GlosbeTranslatorTest(AbstractTest):
         # Lang's params
         lang_node.set_params('word', 'from_lang', 'to_langs', storages=(words, from_langs, to_langs))
         lang_node.set_params_order('words from_lang to_langs')
-        lang_node.set_allowed_params_default_order('from_lang')
+        lang_node.set_default_setting_order('from_lang')
         # Word's params
         word_node.set_params('word', 'from_lang', 'to_langs', storages=(words, from_langs, to_langs))
         word_node.set_params_order('from_lang to_langs words')
-        lang_node.set_allowed_params_default_order('from_lang', 'to_langs')
+        lang_node.set_default_setting_order('from_lang', 'to_langs')
         # Double's params
         double_multi_node.set_params('word', 'from_lang', 'to_langs', storages=(words, from_langs, to_langs))
         double_multi_node.set_params_order('from_lang')
         double_multi_node.set_params_order('')
+
+        # ######################### #
+        # Complete argument parsing #
+        # ######################### #
+        cli = Cli(root)
+
+
 
 
     def test_cloning_node(self):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import itertools
+from inspect import signature
+from itertools import islice, zip_longest
 from typing import Type, Iterator, Callable, Iterable, Any
 
 from src.nodes.iName import IName
@@ -27,6 +28,7 @@ class Node(IName):  # TODO think of splitting the responsibilities
         self._flags: dict[str, Flag] = {}
         self._params: dict[str, Parameter] = {}
         self._collections: dict[str, DefaultSmartStorage] = {}
+        self._actions: SmartList[Callable] = SmartList()
         self._orders: dict[int, list[str]] = {}
         self._default_order: list[str] = []
         self._only_hidden = False
@@ -72,7 +74,7 @@ class Node(IName):  # TODO think of splitting the responsibilities
         return None
 
     def _get_stored_by_name_collections(self) -> list[dict[str, stored_by_name]]:
-        return [self._nodes, self._hidden_nodes, self._params, self._flags]
+        return [self._nodes, self._hidden_nodes, self._params, self._flags, self._collections]
 
     def add_node(self, to_add: str | Node) -> Node:
         node = create_iname(to_add, Node)
@@ -96,7 +98,7 @@ class Node(IName):  # TODO think of splitting the responsibilities
         return self._get_save(name, self._flags)
 
     def set_params(self, *parameters: str | DefaultSmartStorage, storages: tuple[DefaultSmartStorage, ...] = ()) -> None:
-        for param, storage in itertools.zip_longest(parameters, storages):
+        for param, storage in zip_longest(parameters, storages):
             self.add_param(param, storage)
 
     def add_param(self, to_add: str | Parameter | DefaultSmartStorage, storage: DefaultSmartStorage = None) -> Parameter:
@@ -181,9 +183,9 @@ class Node(IName):  # TODO think of splitting the responsibilities
     def _get_obligatory_params_count(self):
         return len(self._params) - self._get_optional_params_count()
 
-    def set_allowed_params_default_order(self, *params: str | Parameter, defaults: list[Any] = None):
+    def set_default_setting_order(self, *params: str | Parameter, defaults: list[Any] = None):
         defaults = defaults or []
-        for param, default in itertools.zip_longest(params, defaults):
+        for param, default in zip_longest(params, defaults):
             name = str(param)
             self._default_order.append(name)
             if default is not None:
@@ -224,31 +226,56 @@ class Node(IName):  # TODO think of splitting the responsibilities
             raise ParsingException(self, args)  # TODO: refactor parsing
 
     def _parse_node_args_by_defaults(self, parameters_number: int, args: list[str]):
-        closest = self._get_closest_order_arity(parameters_number)
-        order = self._orders[closest]
-        needed_defaults = closest - parameters_number
-        params_to_skip = self.get_optional_params()[:needed_defaults]
+        needed_defaults, order = self._get_closest_arity_with_order(parameters_number)
+        self._parse_single_args_to_params(args, order, needed_defaults)
+        self._parse_list_args_by_order(args[parameters_number:], order)
 
-        self._parse_single_node_args(args, order, params_to_skip)
-        self._parse_list_node_args_by_order(args[parameters_number:], order)
-
-    def _get_closest_order_arity(self, parameters_number: int):
+    def _get_closest_arity(self, parameters_number: int):
         return min(num for num in self._orders if num >= parameters_number)
 
-    def _parse_single_node_args(self, args: list[str], order: list[str], params_to_skip=None):
-        if params_to_skip is None:
-            params_to_skip = []
-        i = 0
-        for arg in args:
-            param = self.get_param(order[i])
-            if param not in params_to_skip:
-                param.add_to_values(arg)
-            i += 1
+    def _get_closest_order(self, parameters_number: int) -> list[str]:
+        return self._orders[self._get_closest_arity(parameters_number)]
 
-    def _parse_list_node_args_by_order(self, args: list[str], order: list[str]):
-        param = order[-1]
-        for arg in args:
-            self.get_param(param).add_to_values(arg)
+    def _get_closest_arity_with_order(self, parameters_number: int) -> tuple[int, list[str]]:
+        closest = self._get_closest_arity(parameters_number)
+        return closest, self._orders[closest]
+
+    def _get_needed_defaults_with_order(self, parameters_number: int) -> tuple[int, list[str]]:
+        closest, order = self._get_closest_arity_with_order(parameters_number)
+        return closest - parameters_number, order
+
+    def _parse_single_args_to_params(self, args: list[str], order: list[str], needed_defaults: int):
+        params_to_use = list(self._get_params_to_use(order, needed_defaults))
+        for param, arg in zip(params_to_use, args):
+            param.add_to_values(arg)
+        rest_of_args = args[len(params_to_use):]
+        params_to_use[-1].add_to_values(rest_of_args)
+
+    def _get_params_to_use(self, order: list[str], needed_defaults: int) -> Iterator[Parameter]:
+        params_to_skip = self.get_params_to_skip(needed_defaults)
+        params_to_use = (self.get_param(param_name) for param_name in order if param_name not in params_to_skip)
+        return params_to_use
+
+    def get_params_to_skip(self, needed_defaults: int) -> list[str]:
+        to_skip = self._default_order[:needed_defaults]
+        lacking_defaults = needed_defaults - len(to_skip)
+        to_skip += [param.name for param in islice(self.get_optional_params(), lacking_defaults)]
+        return to_skip
+
+    def _parse_list_args_by_order(self, args: list[str], order: list[str]) -> None:
+        self.get_param(order[-1]).add_to_values(args)
+
+    # Actions
+
+    def add_action(self, action: Callable) -> None:
+        self._actions += action
+
+    def perform_all_actions(self) -> None:
+        for action in self._actions:
+            arity = len(signature(action).parameters)
+            params = (param.get() for param in self._params.values())
+            args = list(islice(params, arity))
+            action(*args)
 
 
 class HiddenNode(Node, IActive):  # TODO: refactor to remove duplications (active and inactive conditions should be a separate class
