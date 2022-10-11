@@ -221,12 +221,18 @@ class Node(IName):  # TODO think of splitting the responsibilities
     def parse_node_args(self, args: list[str]):
         parameters_number = min(len(args), len(self._params))
         if self._is_parsing_possible(parameters_number):
+            self._set_default_order_if_not_exist()
             self._parse_node_args_by_defaults(parameters_number, args)
         elif parameters_number != 0:
             raise ParsingException(self, args)  # TODO: refactor parsing
 
     def _is_parsing_possible(self, parameters_number: int):
         return parameters_number != 0 and (parameters_number in self._orders or parameters_number >= self._get_obligatory_params_count())
+
+    def _set_default_order_if_not_exist(self) -> None:
+        if not self._orders:
+            params = self._params.keys()
+            self._orders[len(params)] = list(params)
 
     def _parse_node_args_by_defaults(self, parameters_number: int, args: list[str]):
         needed_defaults, order = self._get_needed_defaults_with_order(parameters_number)
@@ -239,11 +245,6 @@ class Node(IName):  # TODO think of splitting the responsibilities
 
     def _get_closest_arity_with_order(self, parameters_number: int) -> tuple[int, list[str]]:
         closest = self._get_closest_arity(parameters_number)
-        if closest is None:  # TODO: think of not doing it dynamically
-            params = self._params.keys()
-            closest = len(params)
-            self._orders[closest] = list(params)
-
         return closest, self._orders[closest]
 
     def _get_closest_arity(self, parameters_number: int) -> int:
