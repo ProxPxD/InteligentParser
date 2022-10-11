@@ -16,7 +16,7 @@ def no_empty(func):
 
 
 def flatten_once(func):
-    return lambda to_flatten: (elem for lst in func() for elem in lst)
+    return lambda self, to_flatten: (elem for lst in func(self, to_flatten) for elem in lst)
 
 
 class Node(IName):  # TODO think of splitting the responsibilities
@@ -220,36 +220,44 @@ class Node(IName):  # TODO think of splitting the responsibilities
 
     def parse_node_args(self, args: list[str]):
         parameters_number = min(len(args), len(self._params))
-        if parameters_number in self._orders or parameters_number >= self._get_obligatory_params_count():
+        if self._is_parsing_possible(parameters_number):
             self._parse_node_args_by_defaults(parameters_number, args)
-        else:
+        elif parameters_number != 0:
             raise ParsingException(self, args)  # TODO: refactor parsing
 
+    def _is_parsing_possible(self, parameters_number: int):
+        return parameters_number != 0 and (parameters_number in self._orders or parameters_number >= self._get_obligatory_params_count())
+
     def _parse_node_args_by_defaults(self, parameters_number: int, args: list[str]):
-        needed_defaults, order = self._get_closest_arity_with_order(parameters_number)
+        needed_defaults, order = self._get_needed_defaults_with_order(parameters_number)
         self._parse_single_args_to_params(args, order, needed_defaults)
         self._parse_list_args_by_order(args[parameters_number:], order)
-
-    def _get_closest_arity(self, parameters_number: int):
-        return min(num for num in self._orders if num >= parameters_number)
-
-    def _get_closest_order(self, parameters_number: int) -> list[str]:
-        return self._orders[self._get_closest_arity(parameters_number)]
-
-    def _get_closest_arity_with_order(self, parameters_number: int) -> tuple[int, list[str]]:
-        closest = self._get_closest_arity(parameters_number)
-        return closest, self._orders[closest]
 
     def _get_needed_defaults_with_order(self, parameters_number: int) -> tuple[int, list[str]]:
         closest, order = self._get_closest_arity_with_order(parameters_number)
         return closest - parameters_number, order
+
+    def _get_closest_arity_with_order(self, parameters_number: int) -> tuple[int, list[str]]:
+        closest = self._get_closest_arity(parameters_number)
+        if closest is None:  # TODO: think of not doing it dynamically
+            params = self._params.keys()
+            closest = len(params)
+            self._orders[closest] = list(params)
+
+        return closest, self._orders[closest]
+
+    def _get_closest_arity(self, parameters_number: int) -> int:
+        return min((num for num in self._orders if num >= parameters_number), default=None)
 
     def _parse_single_args_to_params(self, args: list[str], order: list[str], needed_defaults: int):
         params_to_use = list(self._get_params_to_use(order, needed_defaults))
         for param, arg in zip(params_to_use, args):
             param.add_to_values(arg)
         rest_of_args = args[len(params_to_use):]
-        params_to_use[-1].add_to_values(rest_of_args)
+        if not params_to_use and args:
+            raise ValueError
+        if params_to_use and args:
+            params_to_use[-1].add_to_values(rest_of_args)
 
     def _get_params_to_use(self, order: list[str], needed_defaults: int) -> Iterator[Parameter]:
         params_to_skip = self.get_params_to_skip(needed_defaults)
@@ -282,17 +290,17 @@ class HiddenNode(Node, IActive):  # TODO: refactor to remove duplications (activ
 
     def __init__(self, name: str, active_condition: compositeActive = None, inactive_condition: compositeActive = None):
         super().__init__(name)
-        self._active_conditions = SmartList(IActive._map_to_single(active_condition))
-        self._inactive_conditions = SmartList(IActive._map_to_single(inactive_condition))
+        self._active_conditions = SmartList(IActive._map_to_single(active_condition)) if active_condition else SmartList()
+        self._inactive_conditions = SmartList(IActive._map_to_single(inactive_condition)) if inactive_condition else SmartList()
 
     def set_active_on_conditions(self, *conditions: compositeActive, func: bool_func = all):
-        self._active_conditions += IActive._map_to_single(conditions, func=func)
+        self._active_conditions += IActive._map_to_single(*conditions, func=func)
 
     def set_inactive_on_conditions(self, *conditions: compositeActive, func: bool_func = all):
-        self._inactive_conditions += IActive._map_to_single(conditions, func=func)
+        self._inactive_conditions += IActive._map_to_single(*conditions, func=func)
 
     def is_active(self) -> bool:
-        return all(func() for func in self._active_conditions) and not all(func() for func in self._inactive_conditions)
+        return all(func() for func in self._active_conditions) and not any(func() for func in self._inactive_conditions)
 
     def set_active(self, first_when: active, *when: compositeActive, but_not: compositeActive = None):
         self.set_active_and(first_when, *when)

@@ -47,10 +47,12 @@ class IActive(abc.ABC):
 
     @staticmethod
     def _map_to_single(*to_map: compositeActive, func: bool_func = all) -> Callable[[], bool] | None:
-        if isinstance(to_map, Callable) or not to_map:
-            return to_map
+        if not to_map:
+            raise ValueError
+        if len(to_map) == 1 and isinstance(to_map[0], Callable):
+            return to_map[0]
         if not isinstance(to_map, Iterable):
-            to_map = [to_map]
+            to_map = tuple(to_map)
         return IActive.merge_conditions(to_map, func=func)
 
     @staticmethod
@@ -59,12 +61,12 @@ class IActive(abc.ABC):
 
     @staticmethod
     def _is_met(to_check: compositeActive, func: bool_func) -> bool:
-        if isinstance(to_check, active):
+        if isinstance(to_check, IActive):
             return to_check.is_active()
         elif isinstance(to_check, Callable):
             return to_check()
         elif isinstance(to_check, Iterable):
-            return IActive._map_to_single(to_check, func)()
+            return IActive.merge_conditions(tuple(to_check), func)()
         else:
             raise ValueError
 
@@ -117,8 +119,9 @@ class DefaultStorage(IDefaultStorable):
         return next((get_default() for condition, get_default in self._get_defaults.items() if condition()), None)
 
     def __contains__(self, item):
-        if 'name' in item.__dict__:
+        if not isinstance(item, (int, float, str, list, dict, set)) and 'name' in item.__dict__:
             item = item.name
+
         return super().__contains__(item)
 
 

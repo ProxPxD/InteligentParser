@@ -117,6 +117,7 @@ class GlosbeTranslatorTest(AbstractTest):
         # Complete argument parsing #
         # ######################### #
         cli = Cli(root)
+        cli.parse([])
 
 
 
