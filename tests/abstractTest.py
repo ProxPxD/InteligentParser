@@ -1,8 +1,8 @@
 import abc
 import unittest
 
-from src.nodes.node import Root
 from src.cli import Cli
+from src.nodes.node import Root
 
 
 class AbstractTest(unittest.TestCase, abc.ABC):
@@ -36,11 +36,13 @@ class AbstractTest(unittest.TestCase, abc.ABC):
 
     def tearDown(self) -> None:
         super().tearDown()
+        result = self.defaultTestResult()
+        self._feedErrorsToResult(result, self._outcome.errors)
         if self.currentResult is not None:
-            errors = self.currentResult.errors
-            failures = self.currentResult.failures
-            ok = not (errors or failures)
-            print('ok' if ok else 'ERROR' if errors else 'FAIL')
+            is_error = any(test == self for test, text in result.errors)
+            is_failure = any(test == self for test, text in result.failures)
+            ok = not (is_error or is_failure)
+            print('ok' if ok else 'ERROR' if is_error else 'FAIL')
         else:
             print()
 
@@ -54,5 +56,5 @@ class AbstractTest(unittest.TestCase, abc.ABC):
         return 'unnamed'
 
     @abc.abstractmethod
-    def test_create_correct_cli(self) -> None:
+    def test_correct_single_mode(self) -> None:
         pass
