@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Callable, Any, Sized
+from abc import ABC
+from typing import Callable, Any
 
-from src.nodes.iName import IName
+from src.nodes.interfaces import IName, IResetable
 from src.nodes.smartList import SmartList
 from src.nodes.storages import DefaultStorage, IDefaultStorable, IActive
 from src.parsingException import ParsingException
@@ -10,12 +11,18 @@ from src.parsingException import ParsingException
 default_type = str | int | list[str | int] | None
 
 
-class DefaultSmartStorage(DefaultStorage, SmartList, IName):
+class DefaultSmartStorage(DefaultStorage, SmartList, IName, IResetable):
 
     def __init__(self, limit: int = None, *, default=None, name=''):
         IName.__init__(self, name)
         SmartList.__init__(self, limit=limit)
         DefaultStorage.__init__(self, default)
+
+    def reset(self):
+        self.clear()
+
+    def _get_resetable(self) -> set[IResetable]:
+        return set()
 
     def add_to_add_names(self, *flags: Flag):
         for flag in flags:
@@ -29,7 +36,7 @@ class DefaultSmartStorage(DefaultStorage, SmartList, IName):
         return str(flag) in self
 
 
-class FinalNode(IDefaultStorable, IName):
+class FinalNode(IDefaultStorable, IName, IResetable, ABC):
 
     def __init__(self, name: str, *, storage: DefaultSmartStorage = None, limit=None, default=None, local_limit=None):
         IDefaultStorable.__init__(self)
@@ -43,6 +50,12 @@ class FinalNode(IDefaultStorable, IName):
             storage = DefaultSmartStorage(limit=limit, default=default)
 
         self._storage = storage
+
+    def reset(self):
+        pass
+
+    def _get_resetable(self) -> set[IResetable]:
+        return set(self._storage)
 
     def set_limit(self, limit: int | None, *, storage: DefaultSmartStorage = None) -> None:
         if storage is not None:
@@ -113,6 +126,9 @@ class Flag(FinalNode, IActive):
         self._alternative_names = set(alternative_names)
         self._activated: bool = False
         self._on_activation: SmartList[Callable] = SmartList()
+
+    def reset(self):
+        self.deactivate()
 
     def add_alternative_names(self, *alternative_names: str):
         self._alternative_names |= set(alternative_names)

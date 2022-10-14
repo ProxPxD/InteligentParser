@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from abc import ABC
 from inspect import signature
 from itertools import islice, zip_longest
 from typing import Type, Iterator, Callable, Iterable, Any
 
-from src.nodes.iName import IName
+from src.nodes.interfaces import IName, IResetable
 from src.nodes.nodeStorages import Flag, Parameter, DefaultSmartStorage
 from src.nodes.smartList import SmartList
 from src.nodes.storages import IActive, compositeActive, active, bool_func
@@ -19,7 +20,7 @@ def flatten_once(func):
     return lambda self, to_flatten: (elem for lst in func(self, to_flatten) for elem in lst)
 
 
-class Node(IName):  # TODO think of splitting the responsibilities
+class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilities
 
     def __init__(self, name: str):
         IName.__init__(self, name)
@@ -32,6 +33,16 @@ class Node(IName):  # TODO think of splitting the responsibilities
         self._orders: dict[int, list[str]] = {}
         self._default_order: list[str] = []
         self._only_hidden = False
+
+    def reset(self) -> None:
+        pass
+
+    def get_resetable(self) -> set[IResetable]:
+        resetable = set()
+        for collection in [self._nodes, self._hidden_nodes, self._flags, self._params, self._collections]:
+            collection = collection.values()
+            resetable |= self._get_resetable_from_collection(collection)
+        return resetable
 
     def _get_save(self, name: str, from_dict: dict[str, stored_by_name]) -> stored_by_name:
         to_return = self._get_stored_by_name(name, from_dict)
@@ -83,6 +94,12 @@ class Node(IName):  # TODO think of splitting the responsibilities
     def get_node(self, name: str) -> Node:
         return self._get_save(name, self._nodes)
 
+    def get_nodes(self) -> list[Node]:
+        return list(self._nodes.values())
+
+    def get_all_nodes(self) -> list[Node]:
+        return self.get_nodes() + self.get_hidden_nodes()
+
     def add_flag(self, main: str | Flag, *alternative_names: str, storage: DefaultSmartStorage = None, storage_limit=0, flag_limit=None, default=None) -> Flag:
         flag = create_iname(main, Flag)
         flag.add_alternative_names(*alternative_names)
@@ -90,11 +107,10 @@ class Node(IName):  # TODO think of splitting the responsibilities
         flag.set_limit(flag_limit)
         return self._put_in_collection(flag, self._flags)
 
-    def get_all_flags(self) -> list[Flag]:
+    def get_flags(self) -> list[Flag]:
         return list(self._flags.values())
 
     def get_flag(self, name: str) -> Flag:
-
         return self._get_save(name, self._flags)
 
     def set_params(self, *parameters: str | DefaultSmartStorage, storages: tuple[DefaultSmartStorage, ...] = ()) -> None:
@@ -117,12 +133,18 @@ class Node(IName):  # TODO think of splitting the responsibilities
     def get_param(self, name: str) -> Parameter:
         return self._get_save(name, self._params)
 
+    def get_params(self) -> list[Parameter]:
+        return list(self._params.values())
+
     def add_collection(self, name: str, limit: int = None) -> DefaultSmartStorage:
         collection = DefaultSmartStorage(limit, name=name)
         return self._put_in_collection(collection, self._collections)
 
-    def get_collection(self, name: str):
+    def get_collection(self, name: str) -> DefaultSmartStorage:
         return self._get_save(name, self._collections)
+
+    def get_collections(self) -> list[DefaultSmartStorage]:
+        return list(self._collections.values())
 
     def add_hidden_node(self, to_add: str | Node, active_condition: Callable[[], bool] = None) -> HiddenNode:
         self._hidden_nodes[to_add] = HiddenNode(to_add, active_condition)
@@ -130,6 +152,9 @@ class Node(IName):  # TODO think of splitting the responsibilities
 
     def get_hidden_node(self, name: str) -> HiddenNode:
         return self._get_save(name, self._hidden_nodes)
+
+    def get_hidden_nodes(self):
+        return list(self._hidden_nodes.values())
 
     def set_only_hidden_nodes(self) -> None:
         self._only_hidden = True

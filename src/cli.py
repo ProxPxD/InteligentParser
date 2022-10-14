@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Iterator
 
 from .nodes.node import Node, Root
@@ -15,7 +17,7 @@ class Cli:
         if args:
             self._args[:] = list(args)
 
-    def parse(self, args: list[str] = None):
+    def parse(self, args: list[str] = None) -> ParsingResult:
         self.set_args(args)
         self._active_nodes = self._get_active_nodes()
         self._action_node = self._active_nodes[-1]
@@ -25,10 +27,7 @@ class Cli:
         node_args = self._action_node.filter_flags_out(node_args)
         self._action_node.parse_node_args(node_args)
         self._action_node.perform_all_actions()
-
-        # self.__dict__['my'] = lambda self: print(self._args)
-
-        return None  # TODO: create return parser object
+        return ParsingResult(self._action_node)
 
     def _get_active_nodes(self) -> list[Node]:
         nodes = list(self._get_active_argument_nodes())
@@ -52,3 +51,14 @@ class Cli:
     def _get_node_args(self, args: list[str]) -> list[str]:
         return args[len(self._active_nodes)-1:]
 
+    def reset(self) -> None:
+        for resetable in self._root.get_resetable():
+            resetable.reset()
+
+
+class ParsingResult:
+
+    def __init__(self, node: Node):
+        setattr(self, 'active_node', node)
+        for param in node.get_params():
+            setattr(self, param.name, lambda: param.get())
