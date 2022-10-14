@@ -10,7 +10,6 @@ class AbstractTest(unittest.TestCase, abc.ABC):
     parser: Cli | None = None
     root: Root | None = None
     half_sep_length = 40
-    currentResult = None
 
     @classmethod
     def print_sep_with_text(cls, text: str, sep: str = '*') -> None:
@@ -38,17 +37,13 @@ class AbstractTest(unittest.TestCase, abc.ABC):
         super().tearDown()
         result = self.defaultTestResult()
         self._feedErrorsToResult(result, self._outcome.errors)
-        if self.currentResult is not None:
-            is_error = any(test == self for test, text in result.errors)
-            is_failure = any(test == self for test, text in result.failures)
-            ok = not (is_error or is_failure)
-            print('ok' if ok else 'ERROR' if is_error else 'FAIL')
-        else:
-            print()
 
-    def run(self, result: unittest.result.TestResult | None = ...) -> unittest.result.TestResult | None:
-        self.currentResult = result
-        unittest.TestCase.run(self, result)
+        is_error = any(test == self for test, text in result.errors)
+        is_failure = any(test == self for test, text in result.failures)
+        ok = not (is_error or is_failure)
+
+        print('ok' if ok else 'ERROR' if is_error else 'FAIL' if is_failure else
+            'WRONG UNIT TEST OUTCOME CHECKING! Investigate (possible incompatible with a python newer than 3.10)')
 
     @classmethod
     @abc.abstractmethod
