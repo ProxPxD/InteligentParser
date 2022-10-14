@@ -22,9 +22,6 @@ class SmartList(list):
         self.__iadd__(elems)
         return [elem for elem in elems if elem not in self]
 
-    def empty_list(self):
-        self[:] = []
-
     def get_limit(self):
         return self._limit
 

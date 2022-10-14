@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import shlex
 from typing import Iterator
 
+from .nodes.interfaces import IResetable
 from .nodes.node import Node, Root
+from .nodes.nodeStorages import Parameter
 
 
-class Cli:
+class Cli(IResetable):
 
     def __init__(self, root: Root, args: list[str] = None):
         self._root: Root = root
@@ -17,16 +20,26 @@ class Cli:
         if args:
             self._args[:] = list(args)
 
+    def get_root(self) -> Root:
+        return self._root
+
+    root = property(fget=get_root)
+
+    def parse_from_str(self, input: str) -> ParsingResult:
+        return self.parse(shlex.split(input))
+
     def parse(self, args: list[str] = None) -> ParsingResult:
         self.set_args(args)
+        self._args = self._root.filter_flags_out(self._args)
+
         self._active_nodes = self._get_active_nodes()
         self._action_node = self._active_nodes[-1]
 
-        self._args = self._root.filter_flags_out(self._args)
         node_args = self._get_node_args(self._args)
         node_args = self._action_node.filter_flags_out(node_args)
         self._action_node.parse_node_args(node_args)
         self._action_node.perform_all_actions()
+
         return ParsingResult(self._action_node)
 
     def _get_active_nodes(self) -> list[Node]:
@@ -56,9 +69,13 @@ class Cli:
             resetable.reset()
 
 
-class ParsingResult:
+class ParsingResult:  # TODO: implement default values/methods (like name, etc.)
 
     def __init__(self, node: Node):
-        setattr(self, 'active_node', node)
+        setattr(self, 'node', node)
         for param in node.get_params():
-            setattr(self, param.name, lambda: param.get())
+            setattr(self, f'get_{param.name}', ParsingResult.make_getter(param))
+
+    @staticmethod
+    def make_getter(param: Parameter):
+        return lambda: param.get()

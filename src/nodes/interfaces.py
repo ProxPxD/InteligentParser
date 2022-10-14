@@ -26,7 +26,6 @@ class IResetable(abc.ABC):
     def reset(self):
         raise NotImplemented
 
-    @abc.abstractmethod
     def _get_resetable(self) -> set[IResetable]:
         raise NotImplemented
 

@@ -30,6 +30,7 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
         self._params: dict[str, Parameter] = {}
         self._collections: dict[str, DefaultSmartStorage] = {}
         self._actions: SmartList[Callable] = SmartList()
+        self._action_results: list = []
         self._orders: dict[int, list[str]] = {}
         self._default_order: list[str] = []
         self._only_hidden = False
@@ -44,8 +45,8 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
             resetable |= self._get_resetable_from_collection(collection)
         return resetable
 
-    def _get_save(self, name: str, from_dict: dict[str, stored_by_name]) -> stored_by_name:
-        to_return = self._get_stored_by_name(name, from_dict)
+    def _get_save(self, name: str, *from_dict: dict[str, stored_by_name]) -> stored_by_name:
+        to_return = self._get_stored_by_name(name, *from_dict)
         if to_return is not None:
             return to_return
         raise ValueError(f'Name {name} does not belong to {self.name} ')
@@ -57,12 +58,12 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
         collection[to_put.name] = to_put
         return to_put
 
-    def _has_in_collection(self, node: str | stored_by_name, from_dict: dict[str, stored_by_name]) -> bool:
-        if isinstance(node, stored_by_name):
-            node = node.name
-        if not isinstance(node, str):
+    def _has_key_in_collection(self, elem: str | stored_by_name, from_dict: dict[str, stored_by_name]) -> bool:
+        if isinstance(elem, stored_by_name):
+            elem = elem.name
+        if not isinstance(elem, str):
             return False
-        return node in from_dict
+        return elem in from_dict
 
     def has(self, to_check: str | stored_by_name) -> bool:
         if isinstance(to_check, stored_by_name):
@@ -76,8 +77,8 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
             raise ValueError
         return result
 
-    def _get_stored_by_name(self, name: str, from_dict: dict[str, stored_by_name] = None) -> stored_by_name | None:
-        from_dicts = [from_dict] if from_dict else self._get_stored_by_name_collections()
+    def _get_stored_by_name(self, name: str, *from_dicts: dict[str, stored_by_name]) -> stored_by_name | None:
+        from_dicts = from_dicts if len(from_dicts) else self._get_stored_by_name_collections()
         for dict in from_dicts:
             for elem in dict.values():
                 if elem.has_name(name):
@@ -87,12 +88,13 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
     def _get_stored_by_name_collections(self) -> list[dict[str, stored_by_name]]:
         return [self._nodes, self._hidden_nodes, self._params, self._flags, self._collections]
 
-    def add_node(self, to_add: str | Node) -> Node:
+    def add_node(self, to_add: str | Node, action: Callable = None) -> Node:
         node = create_iname(to_add, Node)
+        node.add_action(action)
         return self._put_in_collection(node, self._nodes)
 
     def get_node(self, name: str) -> Node:
-        return self._get_save(name, self._nodes)
+        return self._get_save(name, self._nodes, self._hidden_nodes)
 
     def get_nodes(self) -> list[Node]:
         return list(self._nodes.values())
@@ -146,8 +148,10 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
     def get_collections(self) -> list[DefaultSmartStorage]:
         return list(self._collections.values())
 
-    def add_hidden_node(self, to_add: str | Node, active_condition: Callable[[], bool] = None) -> HiddenNode:
-        self._hidden_nodes[to_add] = HiddenNode(to_add, active_condition)
+    def add_hidden_node(self, to_add: str | Node, active_condition: Callable[[], bool] = None, action: Callable = None) -> HiddenNode:
+        node = HiddenNode(to_add, active_condition)
+        node.add_action(action)
+        self._hidden_nodes[to_add] = node
         return self._hidden_nodes[to_add]
 
     def get_hidden_node(self, name: str) -> HiddenNode:
@@ -170,7 +174,7 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
         active = next(hidden_nodes, None)
         if active is None:
             raise ParsingException("None hidden node active")
-        if next(hidden_nodes):
+        if next(hidden_nodes, None):
             raise ParsingException("More than one hidden node is active")
         return active
 
@@ -181,16 +185,17 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
         return self.has(node)
 
     def has_node(self, node: str | Node) -> bool:
-        return self._has_in_collection(node, self._nodes)
+        return self._has_key_in_collection(node, self._nodes)
 
     def has_flag(self, flag: str | Flag) -> bool:
-        return self._has_in_collection(flag, self._flags)
+        flag = str(flag)
+        return any(flag_instance.has_name(flag) for flag_instance in self._flags.values())
 
     def is_flag(self, flag: str):
         return self.has_flag(flag)
 
     def has_hidden_node(self, hidden_node: str | HiddenNode) -> bool:
-        return self._has_in_collection(hidden_node, self._hidden_nodes)
+        return self._has_key_in_collection(hidden_node, self._hidden_nodes)
 
     def set_params_order(self, line: str) -> None:
         params = line.split(' ') if len(line) else []
@@ -240,7 +245,7 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
         flag_name, flag_args = chunk[0], chunk[1:]
         flag = self.get_flag(flag_name)
         flag.activate()
-        rest = flag.add_to_values(*flag_args)
+        rest = flag.add_to_values(flag_args)
         return rest
 
     def parse_node_args(self, args: list[str]):
@@ -262,7 +267,6 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
     def _parse_node_args_by_defaults(self, parameters_number: int, args: list[str]):
         needed_defaults, order = self._get_needed_defaults_with_order(parameters_number)
         self._parse_single_args_to_params(args, order, needed_defaults)
-        self._parse_list_args_by_order(args[parameters_number:], order)
 
     def _get_needed_defaults_with_order(self, parameters_number: int) -> tuple[int, list[str]]:
         closest, order = self._get_closest_arity_with_order(parameters_number)
@@ -282,7 +286,7 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
         rest_of_args = args[len(params_to_use):]
         if not params_to_use and args:
             raise ValueError
-        if params_to_use and args:
+        if params_to_use and rest_of_args:
             params_to_use[-1].add_to_values(rest_of_args)
 
     def _get_params_to_use(self, order: list[str], needed_defaults: int) -> Iterator[Parameter]:
@@ -309,7 +313,14 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
             arity = len(signature(action).parameters)
             params = (param.get() for param in self._params.values())
             args = list(islice(params, arity))
-            action(*args)
+            result = action(*args)
+            self._action_results.append(result)
+
+    def get_action_results(self):
+        return self._action_results
+
+    def get_result(self):
+        return next(iter(self._action_results), None)
 
 
 class HiddenNode(Node, IActive):  # TODO: refactor to remove duplications (active and inactive conditions should be a separate class
@@ -347,11 +358,11 @@ class HiddenNode(Node, IActive):  # TODO: refactor to remove duplications (activ
 
     def set_active_on_flags_in_collection(self, collection: DefaultSmartStorage, *flags: Flag, but_not: list[Flag] | Flag = None):
         but_not = list(but_not) if but_not else []
-        self.set_active_on_conditions(lambda: all((str(flag) in collection for flag in flags)))
-        self.set_inactive_on_conditions(lambda: any((str(flag) in collection for flag in but_not)))
+        self.set_active_on_conditions(lambda: all((flag in collection for flag in flags)))
+        self.set_inactive_on_flags_in_collection(collection, *but_not, func=any)
 
-    def set_inactive_on_flags_in_collection(self, collection: DefaultSmartStorage, *flags: Flag):
-        self.set_inactive_on_conditions(lambda: all((str(flag) in collection for flag in flags)))
+    def set_inactive_on_flags_in_collection(self, collection: DefaultSmartStorage, *flags: Flag, func=all):
+        self.set_inactive_on_conditions(lambda: func((flag in collection for flag in flags)))
 
 
 class Root(Node):

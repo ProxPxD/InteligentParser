@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC
-from typing import Callable, Any
+from typing import Callable, Any, Iterable
 
 from src.nodes.interfaces import IName, IResetable
 from src.nodes.smartList import SmartList
@@ -29,11 +29,13 @@ class DefaultSmartStorage(DefaultStorage, SmartList, IName, IResetable):
             flag.when_active_add_name_to(self)
 
     def get(self):
-        to_get = SmartList(self if self else super().get())
-        return to_get[0] if isinstance(to_get, list) and len(to_get) == 1 else SmartList(to_get)
+        to_get = self.copy() if self else super().get()
+        return to_get[0] if isinstance(to_get, list) and len(to_get) == 1 else to_get
 
-    def has_flag(self, flag: Flag | str):
-        return str(flag) in self
+    def __contains__(self, item):
+        if isinstance(item, Flag):
+            return any(name in self for name in item.get_all_names())
+        return super().__contains__(item)
 
 
 class FinalNode(IDefaultStorable, IName, IResetable, ABC):
@@ -77,6 +79,8 @@ class FinalNode(IDefaultStorable, IName, IResetable, ABC):
         self._storage.set_limit(None)
 
     def add_to_values(self, to_add) -> list[str]:
+        if isinstance(to_add, str) or not isinstance(to_add, Iterable):
+            to_add = [to_add]
         rest = self._storage.filter_out(to_add)
         return rest
 
@@ -154,8 +158,11 @@ class Flag(FinalNode, IActive):
     def has_name(self, name: str):
         return super().has_name(name) or name in self._alternative_names
 
+    def get_all_names(self) -> list[str]:
+        return [self._name] + list(self._alternative_names)
+
     def when_active_add_name_to(self, collection: DefaultSmartStorage):
-        if not collection:
+        if collection is None:
             return
         if not isinstance(collection, DefaultSmartStorage):
             raise ParsingException

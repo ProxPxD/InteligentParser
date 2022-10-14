@@ -51,5 +51,5 @@ class AbstractTest(unittest.TestCase, abc.ABC):
         return 'unnamed'
 
     @abc.abstractmethod
-    def test_correct_single_mode(self) -> None:
+    def test_correct_single_mode_parsing(self) -> None:
         pass
