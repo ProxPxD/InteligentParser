@@ -3,6 +3,8 @@ from __future__ import annotations
 import abc
 from typing import Callable, Iterable, Any
 
+from src.nodes.smartList import SmartList
+
 
 class IDefaultStorable(abc.ABC):
 
@@ -44,6 +46,9 @@ class IDefaultStorable(abc.ABC):
 
 
 class IActive(abc.ABC):
+
+    def __init__(self):
+        self._on_activation: SmartList[Callable] = SmartList()
 
     @staticmethod
     def _map_to_single(*to_map: compositeActive, func: bool_func = all) -> Callable[[], bool] | None:

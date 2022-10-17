@@ -19,10 +19,44 @@ def flatten_once(func):
     return lambda self, to_flatten: (elem for lst in func(self, to_flatten) for elem in lst)
 
 
-class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilities
+class ActiveElem(IActive):
+
+    def __init__(self, activated=False):
+        self._on_activation = SmartList()
+        self._activated = activated
+
+    def activate(self):
+        self.set_activated(True)
+
+    def deactivate(self):
+        self.set_activated(False)
+
+    def set_activated(self, val: bool):
+        self._activated = val
+        if self._activated:
+            self._call_all_on_activation_functions()
+
+    def _call_all_on_activation_functions(self):
+        for func in self._on_activation:
+            func()
+
+    def is_active(self):
+        return self._activated
+
+    def when_active_add_name_to(self, collection: DefaultSmartStorage):
+        if collection is None:
+            return
+        if not isinstance(collection, DefaultSmartStorage):
+            raise ParsingException
+
+        self._on_activation += lambda: collection.append(self.name)
+
+
+class Node(IName, IResetable, ActiveElem):  # TODO think of splitting the responsibilities
 
     def __init__(self, name: str):
         IName.__init__(self, name)
+        ActiveElem.__init__(self, False)
         self._nodes: dict[str, Node] = {}
         self._hidden_nodes: dict[str, HiddenNode] = {}
         self._flags: dict[str, Flag] = {}
@@ -112,7 +146,7 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
     def get_flag(self, name: str) -> Flag:
         return self._get_save(name, self._flags)
 
-    def set_params(self, *parameters: str | DefaultSmartStorage, storages: tuple[DefaultSmartStorage, ...] = ()) -> None:
+    def set_params(self, *parameters: str | DefaultSmartStorage | Parameter, storages: tuple[DefaultSmartStorage, ...] = ()) -> None:
         for param, storage in zip_longest(parameters, storages):
             self.add_param(param, storage)
 
@@ -396,9 +430,9 @@ class DefaultSmartStorage(DefaultStorage, SmartList, IName, IResetable):
     def _get_resetable(self) -> set[IResetable]:
         return set()
 
-    def add_to_add_names(self, *flags: Flag):
-        for flag in flags:
-            flag.when_active_add_name_to(self)
+    def add_to_add_names(self, *active_elems: ActiveElem):
+        for active_elem in active_elems:
+            active_elem.when_active_add_name_to(self)
 
     def get(self):
         to_get = self.copy() if self else super().get()
@@ -410,18 +444,19 @@ class DefaultSmartStorage(DefaultStorage, SmartList, IName, IResetable):
         return super().__contains__(item)
 
 
-class FinalNode(IDefaultStorable, IName, IResetable, ABC):
+class FinalNode(IDefaultStorable, IName, IResetable, ActiveElem, ABC):
 
-    def __init__(self, name: str, *, storage: DefaultSmartStorage = None, limit=None, default=None, local_limit=None):
+    def __init__(self, name: str, *, storage: DefaultSmartStorage = None, storage_limit=None, default=None, local_limit=None, activated=False):
         IDefaultStorable.__init__(self)
         IName.__init__(self, name)
+        ActiveElem.__init__(self, activated)
         self._limit = local_limit
         self._storage = None
-        if storage is not None and any(arg is not None for arg in (limit, default)):
+        if storage is not None and any(arg is not None for arg in (storage_limit, default)):
             raise ValueError
 
         if storage is None:
-            storage = DefaultSmartStorage(limit=limit, default=default)
+            storage = DefaultSmartStorage(limit=storage_limit, default=default)
 
         self._storage = storage
 
@@ -491,20 +526,20 @@ class FinalNode(IDefaultStorable, IName, IResetable, ABC):
 
 class Parameter(FinalNode):
 
-    def __init__(self, name: str, *, storage: DefaultSmartStorage = None, limit: int = 1, default: default_type = None, local_limit=1):
-        super().__init__(name, storage=storage, limit=limit, default=default, local_limit=local_limit)
+    def __init__(self, name: str, *, storage: DefaultSmartStorage = None, storage_limit: int | None = 1, default: default_type = None, parameter_limit=1):
+        super().__init__(name, storage=storage, storage_limit=storage_limit, default=default, local_limit=parameter_limit)
+        self.set_activated(True)
 
     def add_to(self, *nodes: Node):
         for node in nodes:
             node.add_param(self)
 
 
-class Flag(FinalNode, IActive):
+class Flag(FinalNode):
 
     def __init__(self, name, *alternative_names: str, storage: DefaultSmartStorage = None, storage_limit: int = 0, default: default_type = None, local_limit=None):
-        super().__init__(name, storage=storage, limit=storage_limit, default=default, local_limit=local_limit)
+        super().__init__(name, storage=storage, storage_limit=storage_limit, default=default, local_limit=local_limit, activated=False)
         self._alternative_names = set(alternative_names)
-        self._activated: bool = False
         self._on_activation: SmartList[Callable] = SmartList()
 
     def reset(self):
@@ -513,37 +548,11 @@ class Flag(FinalNode, IActive):
     def add_alternative_names(self, *alternative_names: str):
         self._alternative_names |= set(alternative_names)
 
-    def activate(self):
-        self.set_activated(True)
-
-    def deactivate(self):
-        self.set_activated(False)
-
-    def set_activated(self, val: bool):
-        self._activated = val
-        if val:
-            self._call_all_on_activation_functions()
-
-    def _call_all_on_activation_functions(self):
-        for func in self._on_activation:
-            func()
-
-    def is_active(self):
-        return self._activated
-
     def has_name(self, name: str):
         return super().has_name(name) or name in self._alternative_names
 
     def get_all_names(self) -> list[str]:
         return [self._name] + list(self._alternative_names)
-
-    def when_active_add_name_to(self, collection: DefaultSmartStorage):
-        if collection is None:
-            return
-        if not isinstance(collection, DefaultSmartStorage):
-            raise ParsingException
-
-        self._on_activation += lambda: collection.append(self.name)
 
 
 stored_by_name = Node | HiddenNode | Flag | Parameter | DefaultSmartStorage
