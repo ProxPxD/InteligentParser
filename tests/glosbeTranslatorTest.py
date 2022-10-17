@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from abstractTest import AbstractTest
 from src.cli import Cli
 from src.nodes.node import Root
@@ -9,8 +11,6 @@ class GlosbeTranslatorTest(AbstractTest):
     langs: list[str] = []
     limit: int = 4
     words = []
-
-    cli: Cli = None
 
     @classmethod
     def _get_test_name(cls) -> str:
@@ -38,13 +38,12 @@ class GlosbeTranslatorTest(AbstractTest):
         words = root.add_collection('words')
 
         # Flags
-        single_flag = root.add_global_flag('--single', '-s')
-        word_flag = root.add_global_flag('--word', '-w')
-        lang_flag = root.add_global_flag('--multi', '-m')
+        single_flag = root.add_flag('--single', '-s')
+        word_flag = root.add_flag('--word', '-w')
+        lang_flag = root.add_flag('--multi', '-m', flag_limit=None, storage=to_langs)  # infinite
         single_flag.when_active_add_name_to(current_modes)  # same as 1
         current_modes.add_to_add_names(lang_flag, word_flag)  # same as 1
         word_flag.set_limit(None, storage=words)  # infinite
-        lang_flag.set_limit(None, storage=to_langs)  # infinite
 
         test_string = 'test'
         words.append(test_string)
@@ -110,9 +109,9 @@ class GlosbeTranslatorTest(AbstractTest):
     def test_getting_flags(self):
         root = Root()
 
-        single_flag = root.add_global_flag('--single', '-s')
-        word_flag = root.add_global_flag('--word', '-w')
-        lang_flag = root.add_global_flag('--multi', '-m')
+        single_flag = root.add_flag('--single', '-s')
+        word_flag = root.add_flag('--word', '-w')
+        lang_flag = root.add_flag('--multi', '-m')
 
         self.assertEqual(3, len(root.get_flags()), msg='Flags have not been added')
         self.assertEqual(single_flag, root.get_flag('--single'), msg='Flag got wrongly by the main name')
@@ -164,8 +163,6 @@ class GlosbeTranslatorTest(AbstractTest):
         self.assertEqual('mieć', result_node.get_word(), msg='word param wrongly detected for single mode')
         self.assertEqual('pl', result_node.get_from_lang(), msg='from_lang param wrongly detected for single mode')
         self.assertEqual('en', result_node.get_to_lang(), msg='to_lang param wrongly detected for single mode')
+
         self.assertEqual('pl/en/mieć', single.get_result(), msg='Action is not performed correctly for single mode')
-
-
-    # TODO: test clonning - test functionality of creating the same node until some point
 

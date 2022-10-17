@@ -6,9 +6,8 @@ from itertools import islice, zip_longest
 from typing import Type, Iterator, Callable, Iterable, Any
 
 from src.nodes.interfaces import IName, IResetable
-from src.nodes.nodeStorages import Flag, Parameter, DefaultSmartStorage
 from src.nodes.smartList import SmartList
-from src.nodes.storages import IActive, compositeActive, active, bool_func
+from src.nodes.storages import IActive, compositeActive, active, bool_func, DefaultStorage, IDefaultStorable
 from src.parsingException import ParsingException
 
 
@@ -79,11 +78,9 @@ class Node(IName, IResetable, ABC):  # TODO think of splitting the responsibilit
 
     def _get_stored_by_name(self, name: str, *from_dicts: dict[str, stored_by_name]) -> stored_by_name | None:
         from_dicts = from_dicts if len(from_dicts) else self._get_stored_by_name_collections()
-        for dict in from_dicts:
-            for elem in dict.values():
-                if elem.has_name(name):
-                    return elem
-        return None
+        elems = (elem for dict in from_dicts for elem in dict.values())
+        searched = next((elem for elem in elems if elem.has_name(name)), None)
+        return searched
 
     def _get_stored_by_name_collections(self) -> list[dict[str, stored_by_name]]:
         return [self._nodes, self._hidden_nodes, self._params, self._flags, self._collections]
@@ -370,12 +367,6 @@ class Root(Node):
     def __init__(self, name: str = 'root'):
         super().__init__(name)
 
-    def add_global_flag(self, main: str | Flag, *alternative_names: str) -> Flag:
-        return self.add_flag(main, *alternative_names)
-
-    def get_global_flag(self, name: str) -> Flag:
-        return self.get_flag(name)
-
 
 def create_iname(to_create: str | IName, of_type: Type) -> stored_by_name:
     if isinstance(to_create, stored_by_name):
@@ -384,6 +375,175 @@ def create_iname(to_create: str | IName, of_type: Type) -> stored_by_name:
         return of_type(to_create)
     else:
         raise ValueError
+
+###############
+# Final nodes #
+###############
+
+default_type = str | int | list[str | int] | None
+
+
+class DefaultSmartStorage(DefaultStorage, SmartList, IName, IResetable):
+
+    def __init__(self, limit: int = None, *, default=None, name=''):
+        IName.__init__(self, name)
+        SmartList.__init__(self, limit=limit)
+        DefaultStorage.__init__(self, default)
+
+    def reset(self):
+        self.clear()
+
+    def _get_resetable(self) -> set[IResetable]:
+        return set()
+
+    def add_to_add_names(self, *flags: Flag):
+        for flag in flags:
+            flag.when_active_add_name_to(self)
+
+    def get(self):
+        to_get = self.copy() if self else super().get()
+        return to_get[0] if isinstance(to_get, list) and len(to_get) == 1 else to_get
+
+    def __contains__(self, item):
+        if isinstance(item, Flag):
+            return any(name in self for name in item.get_all_names())
+        return super().__contains__(item)
+
+
+class FinalNode(IDefaultStorable, IName, IResetable, ABC):
+
+    def __init__(self, name: str, *, storage: DefaultSmartStorage = None, limit=None, default=None, local_limit=None):
+        IDefaultStorable.__init__(self)
+        IName.__init__(self, name)
+        self._limit = local_limit
+        self._storage = None
+        if storage is not None and any(arg is not None for arg in (limit, default)):
+            raise ValueError
+
+        if storage is None:
+            storage = DefaultSmartStorage(limit=limit, default=default)
+
+        self._storage = storage
+
+    def reset(self):
+        pass
+
+    def _get_resetable(self) -> set[IResetable]:
+        return set(self._storage)
+
+    def set_limit(self, limit: int | None, *, storage: DefaultSmartStorage = None) -> None:
+        if storage is not None:
+            self.set_storage(storage)
+        self._limit = limit
+
+    def get_limit(self) -> int:
+        return self._limit
+
+    def set_storage_limit(self, limit: int | None, *, storage: DefaultSmartStorage = None) -> None:
+        if storage:
+            self.set_storage(storage)
+        self._storage.set_limit(limit)
+
+    def get_storage_limit(self) -> int:
+        return self._storage.get_limit()
+
+    def to_list(self):
+        self._storage.set_limit(None)
+
+    def add_to_values(self, to_add) -> list[str]:
+        if isinstance(to_add, str) or not isinstance(to_add, Iterable):
+            to_add = [to_add]
+        rest = self._storage.filter_out(to_add)
+        return rest
+
+    def set_storage(self, storage: DefaultSmartStorage):
+        self._storage = storage
+
+    def get_storage(self) -> DefaultStorage:
+        return self._storage
+
+    def set_type(self, type: Callable | None) -> None:
+        self._storage.set_type(type)
+
+    def set_get_default(self, get_default: Callable) -> None:
+        self._storage.set_get_default(get_default)
+
+    def add_get_default_if(self, get_default: Callable[[], Any], condition: Callable[[], bool]):
+        self._storage.add_get_default_if(get_default, condition)
+
+    def add_get_default_if_and(self, get_default: Callable[[], Any], *conditions: Callable[[], bool]):
+        self._storage.add_get_default_if_and(get_default, *conditions)
+
+    def add_get_default_if_or(self, get_default: Callable[[], Any], *conditions: Callable[[], bool]):
+        self._storage.add_get_default_if_or(get_default, *conditions)
+
+    def is_default_set(self) -> bool:
+        return self._storage.is_default_set()
+
+    def get(self) -> Any:
+        to_return = self._storage.get()
+        if isinstance(to_return, list) and self._limit is not None and self._limit < len(to_return):
+            to_return = to_return[:self._limit]
+        if len(to_return) == 1:
+            to_return = to_return[0]
+        return to_return if to_return else None
+
+
+class Parameter(FinalNode):
+
+    def __init__(self, name: str, *, storage: DefaultSmartStorage = None, limit: int = 1, default: default_type = None, local_limit=1):
+        super().__init__(name, storage=storage, limit=limit, default=default, local_limit=local_limit)
+
+    def add_to(self, *nodes: Node):
+        for node in nodes:
+            node.add_param(self)
+
+
+class Flag(FinalNode, IActive):
+
+    def __init__(self, name, *alternative_names: str, storage: DefaultSmartStorage = None, storage_limit: int = 0, default: default_type = None, local_limit=None):
+        super().__init__(name, storage=storage, limit=storage_limit, default=default, local_limit=local_limit)
+        self._alternative_names = set(alternative_names)
+        self._activated: bool = False
+        self._on_activation: SmartList[Callable] = SmartList()
+
+    def reset(self):
+        self.deactivate()
+
+    def add_alternative_names(self, *alternative_names: str):
+        self._alternative_names |= set(alternative_names)
+
+    def activate(self):
+        self.set_activated(True)
+
+    def deactivate(self):
+        self.set_activated(False)
+
+    def set_activated(self, val: bool):
+        self._activated = val
+        if val:
+            self._call_all_on_activation_functions()
+
+    def _call_all_on_activation_functions(self):
+        for func in self._on_activation:
+            func()
+
+    def is_active(self):
+        return self._activated
+
+    def has_name(self, name: str):
+        return super().has_name(name) or name in self._alternative_names
+
+    def get_all_names(self) -> list[str]:
+        return [self._name] + list(self._alternative_names)
+
+    def when_active_add_name_to(self, collection: DefaultSmartStorage):
+        if collection is None:
+            return
+        if not isinstance(collection, DefaultSmartStorage):
+            raise ParsingException
+
+        self._on_activation += lambda: collection.append(self.name)
 
 
 stored_by_name = Node | HiddenNode | Flag | Parameter | DefaultSmartStorage

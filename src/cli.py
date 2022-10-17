@@ -4,8 +4,7 @@ import shlex
 from typing import Iterator
 
 from .nodes.interfaces import IResetable
-from .nodes.node import Node, Root
-from .nodes.nodeStorages import Parameter
+from .nodes.node import Node, Root, Parameter
 
 
 class Cli(IResetable):

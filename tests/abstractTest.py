@@ -7,7 +7,7 @@ from src.nodes.node import Root
 
 class AbstractTest(unittest.TestCase, abc.ABC):
 
-    parser: Cli | None = None
+    cli: Cli | None = None
     root: Root | None = None
     half_sep_length = 40
 
@@ -50,6 +50,3 @@ class AbstractTest(unittest.TestCase, abc.ABC):
     def _get_test_name(cls) -> str:
         return 'unnamed'
 
-    @abc.abstractmethod
-    def test_correct_single_mode_parsing(self) -> None:
-        pass
