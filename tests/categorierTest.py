@@ -1,13 +1,13 @@
-from src.cli import Cli
-from src.nodes.node import Root, Parameter
+from smartcli.cli import Cli
+from smartcli.nodes.node import Root, Parameter
 from tests.abstractTest import AbstractTest
 
 
-class IdeerTest(AbstractTest):
+class CategorierTest(AbstractTest):
 
     @classmethod
     def _get_test_name(cls) -> str:
-        return IdeerTest.__class__.__name__.removesuffix('Test')
+        return CategorierTest.__class__.__name__.removesuffix('Test')
 
     def create_correct_cli(self) -> Cli:
         root = Root()

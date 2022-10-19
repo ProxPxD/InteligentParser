@@ -5,10 +5,10 @@ from inspect import signature
 from itertools import islice, zip_longest
 from typing import Type, Iterator, Callable, Iterable, Any
 
-from src.nodes.interfaces import IName, IResetable
-from src.nodes.smartList import SmartList
-from src.nodes.storages import IActive, compositeActive, active, bool_func, DefaultStorage, IDefaultStorable
-from src.parsingException import ParsingException
+from smartcli.nodes.interfaces import IName, IResetable
+from smartcli.nodes.smartList import SmartList
+from smartcli.nodes.storages import IActive, compositeActive, active, bool_func, DefaultStorage, IDefaultStorable
+from smartcli.parsingException import ParsingException
 
 
 def no_empty(func):
@@ -388,7 +388,7 @@ class HiddenNode(Node, IActive):  # TODO: refactor to remove duplications (activ
         self.set_inactive_on_conditions(*when, func=any)
 
     def set_active_on_flags_in_collection(self, collection: DefaultSmartStorage, *flags: Flag, but_not: list[Flag] | Flag = None):
-        but_not = list(but_not) if but_not else []
+        but_not = [but_not] if isinstance(but_not, Flag) else []
         self.set_active_on_conditions(lambda: all((flag in collection for flag in flags)))
         self.set_inactive_on_flags_in_collection(collection, *but_not, func=any)
 

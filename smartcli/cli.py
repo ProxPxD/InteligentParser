@@ -9,9 +9,9 @@ from .nodes.node import Node, Root, Parameter
 
 class Cli(IResetable):
 
-    def __init__(self, root: Root, args: list[str] = None):
-        self._root: Root = root
-        self._args: list = args if args else []
+    def __init__(self, args: list[str] = None, root: Root = None):
+        self._root: Root = root or Root()
+        self._args: list = args or []
         self._active_nodes = []
         self._action_node: Node = None
 

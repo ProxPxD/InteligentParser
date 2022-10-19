@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from abstractTest import AbstractTest
-from src.cli import Cli
-from src.nodes.node import Root
+from smartcli.cli import Cli
+from smartcli.nodes.node import Root
 
 
 class GlosbeTranslatorTest(AbstractTest):
@@ -86,7 +86,7 @@ class GlosbeTranslatorTest(AbstractTest):
         double_multi_node.set_params_order('from_lang')
         double_multi_node.set_params_order('')
 
-        self.cli = Cli(root)
+        self.cli = Cli(root=root)
         return self.cli
 
     def test_getting_default_value(self):

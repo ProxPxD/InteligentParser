@@ -1,8 +1,8 @@
 import abc
 import unittest
 
-from src.cli import Cli
-from src.nodes.node import Root
+from smartcli.cli import Cli
+from smartcli.nodes.node import Root
 
 
 class AbstractTest(unittest.TestCase, abc.ABC):

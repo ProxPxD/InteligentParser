@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 from typing import Callable, Iterable, Any
 
-from src.nodes.smartList import SmartList
+from smartcli.nodes.smartList import SmartList
 
 
 class IDefaultStorable(abc.ABC):
@@ -78,9 +78,6 @@ class IActive(abc.ABC):
     @abc.abstractmethod
     def is_active(self) -> bool:
         raise NotImplemented
-
-    def __bool__(self):
-        return self.is_active()
 
 
 bool_func = Callable[[Iterable], bool]
