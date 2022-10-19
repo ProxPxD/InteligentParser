@@ -1,5 +1,5 @@
 from smartcli.cli import Cli
-from smartcli.nodes.node import Root, Parameter
+from smartcli.nodes.node import Parameter
 from tests.abstractTest import AbstractTest
 
 
@@ -10,7 +10,8 @@ class CategorierTest(AbstractTest):
         return CategorierTest.__class__.__name__.removesuffix('Test')
 
     def create_correct_cli(self) -> Cli:
-        root = Root()
+        self.cli = Cli()
+        root = self.cli.root
         # Collections
         operations = root.add_collection('operations', None)
         operands = root.add_collection('operands', 2)
@@ -23,6 +24,9 @@ class CategorierTest(AbstractTest):
         operand_param = Parameter('operand', storage=operands, parameter_limit=1)
         id_param = Parameter('id')
         categories = Parameter('categories', storage_limit=None)
+
+        of.when_active_add_name_to()
+        operand_param.set_activated()
 
         add_node = root.add_node("add")
         del_node = root.add_node("del")
@@ -43,3 +47,6 @@ class CategorierTest(AbstractTest):
         search_node.set_params(operand_param, categories)
         rename_node.set_params(operand_param, id_param, 'new_name')
 
+
+
+        return self.cli

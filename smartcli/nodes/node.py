@@ -3,11 +3,11 @@ from __future__ import annotations
 from abc import ABC
 from inspect import signature
 from itertools import islice, zip_longest
-from typing import Type, Iterator, Callable, Iterable, Any
+from typing import Iterator, Callable, Iterable, Any, TypeVar
 
-from smartcli.nodes.interfaces import IName, IResetable
+from smartcli.nodes.interfaces import INamable, IResetable, compositeActive, active, bool_func
 from smartcli.nodes.smartList import SmartList
-from smartcli.nodes.storages import IActive, compositeActive, active, bool_func, DefaultStorage, IDefaultStorable
+from smartcli.nodes.storages import IActivable, DefaultStorage, IDefaultStorable
 from smartcli.parsingException import ParsingException
 
 
@@ -19,17 +19,12 @@ def flatten_once(func):
     return lambda self, to_flatten: (elem for lst in func(self, to_flatten) for elem in lst)
 
 
-class ActiveElem(IActive):
+class ActiveElem(IActivable):
+    T = TypeVar('T')
 
     def __init__(self, activated=False):
-        self._on_activation = SmartList()
         self._activated = activated
-
-    def activate(self):
-        self.set_activated(True)
-
-    def deactivate(self):
-        self.set_activated(False)
+        self._on_activation: SmartList[Callable] = SmartList()
 
     def set_activated(self, val: bool):
         self._activated = val
@@ -43,19 +38,35 @@ class ActiveElem(IActive):
     def is_active(self):
         return self._activated
 
-    def when_active_add_name_to(self, collection: DefaultSmartStorage):
+    def when_active_add_name_to(self, collection: DefaultSmartStorage) -> None:
         if collection is None:
             return
         if not isinstance(collection, DefaultSmartStorage):
             raise ParsingException
 
-        self._on_activation += lambda: collection.append(self.name)
+        self.when_active(lambda: collection.append(self.name))  # TODO has name and IActive?
+
+    def when_active_turn_off(self, *to_turn_off: IActivable) -> None:
+        self.when_active_set_activated(False, *to_turn_off)
+
+    def when_active_turn_on(self, *to_turn_on: IActivable) -> None:
+        self.when_active_set_activated(True, *to_turn_on)
+
+    def when_active_set_activated(self, activated: bool, *to_set: IActivable):
+        activate_once = lambda a: a.set_activated(activated)
+        self.when_active_apply_for_all(activate_once, to_set)
+
+    def when_active_apply_for_all(self, func: Callable[[T], Any], elems: Iterable[T]):
+        self.when_active(lambda: (func(elem) for elem in elems))
+
+    def when_active(self, action: Callable) -> None:
+        self._on_activation += action
 
 
-class Node(IName, IResetable, ActiveElem):  # TODO think of splitting the responsibilities
+class Node(INamable, IResetable, ActiveElem):  # TODO think of splitting the responsibilities
 
     def __init__(self, name: str):
-        IName.__init__(self, name)
+        INamable.__init__(self, name)
         ActiveElem.__init__(self, False)
         self._nodes: dict[str, Node] = {}
         self._hidden_nodes: dict[str, HiddenNode] = {}
@@ -78,49 +89,47 @@ class Node(IName, IResetable, ActiveElem):  # TODO think of splitting the respon
             resetable |= self._get_resetable_from_collection(collection)
         return resetable
 
-    def _get_save(self, name: str, *from_dict: dict[str, stored_by_name]) -> stored_by_name:
-        to_return = self._get_stored_by_name(name, *from_dict)
-        if to_return is not None:
-            return to_return
-        raise ValueError(f'Name {name} does not belong to {self.name} ')
-
-    def _put_in_collection(self, to_put: stored_by_name, collection: dict[str, stored_by_name]):
+    def _put_in_collection(self, to_put: stored_type, collection: dict[str, INamable]) -> stored_type:
         if to_put.name in collection:
             type_name = to_put.__class__.__name__.__str__()
             raise ValueError(f'{type_name} {to_put.name} already exists in {self._name}')
         collection[to_put.name] = to_put
         return to_put
 
-    def _has_key_in_collection(self, elem: str | stored_by_name, from_dict: dict[str, stored_by_name]) -> bool:
-        if isinstance(elem, stored_by_name):
-            elem = elem.name
-        if not isinstance(elem, str):
-            return False
-        return elem in from_dict
-
-    def has(self, to_check: str | stored_by_name) -> bool:
-        if isinstance(to_check, stored_by_name):
-            to_check = to_check.name
-        result = self._get_stored_by_name(to_check)
-        return result is not None
+    def __getitem__(self, name: str):
+        return self.get(name)
 
     def get(self, name: str):
-        result = self._get_stored_by_name(name)
-        if result is None:
-            raise ValueError
-        return result
+        return self._get_save(name, *self._get_inamable_collections())
 
-    def _get_stored_by_name(self, name: str, *from_dicts: dict[str, stored_by_name]) -> stored_by_name | None:
-        from_dicts = from_dicts if len(from_dicts) else self._get_stored_by_name_collections()
+    def _get_save(self, name: str, *from_dicts: dict[str, stored_type]) -> stored_type:
+        to_return = self._get_stored(name, *from_dicts)
+        if to_return is not None:
+            return to_return
+        raise ValueError(f'Name {name} does not belong to {self.name} ')
+
+    def _get_stored(self, name: str, *from_dicts: dict[str, stored_type]) -> stored_type | None:
+        from_dicts = from_dicts if len(from_dicts) else self._get_inamable_collections()
         elems = (elem for dict in from_dicts for elem in dict.values())
         searched = next((elem for elem in elems if elem.has_name(name)), None)
         return searched
+    
+    def __contains__(self, node: str | INamable):
+        return self.has(node)
 
-    def _get_stored_by_name_collections(self) -> list[dict[str, stored_by_name]]:
+    def has(self, to_check: str | INamable) -> bool:
+        return self._has_key_in_collection(to_check, *self._get_inamable_collections())
+
+    def _has_key_in_collection(self, elem: str | INamable, *from_dict: dict[str, INamable]) -> bool:
+        if isinstance(elem, INamable):
+            elem = elem.name
+        return self._get_stored(elem, *from_dict) is not None
+
+    def _get_inamable_collections(self) -> list[dict[str, INamable]]:
         return [self._nodes, self._hidden_nodes, self._params, self._flags, self._collections]
 
     def add_node(self, to_add: str | Node, action: Callable = None) -> Node:
-        node = create_iname(to_add, Node)
+        node = Node(name=to_add) if isinstance(to_add, str) else to_add
         node.add_action(action)
         return self._put_in_collection(node, self._nodes)
 
@@ -134,7 +143,7 @@ class Node(IName, IResetable, ActiveElem):  # TODO think of splitting the respon
         return self.get_nodes() + self.get_hidden_nodes()
 
     def add_flag(self, main: str | Flag, *alternative_names: str, storage: DefaultSmartStorage = None, storage_limit=0, flag_limit=None, default=None) -> Flag:
-        flag = create_iname(main, Flag)
+        flag = Flag(name=main) if isinstance(main, str) else main
         flag.add_alternative_names(*alternative_names)
         flag.set_storage(storage if storage else DefaultSmartStorage(storage_limit, default=default))
         flag.set_limit(flag_limit)
@@ -158,7 +167,7 @@ class Node(IName, IResetable, ActiveElem):  # TODO think of splitting the respon
             storage = to_add
             to_add = to_add.name
 
-        param = create_iname(to_add, Parameter)
+        param = Parameter(to_add) if not isinstance(to_add, Parameter) else to_add
         if storage is not None:
             param.set_storage(storage)
         return self._put_in_collection(param, self._params)
@@ -180,7 +189,8 @@ class Node(IName, IResetable, ActiveElem):  # TODO think of splitting the respon
         return list(self._collections.values())
 
     def add_hidden_node(self, to_add: str | Node, active_condition: Callable[[], bool] = None, action: Callable = None) -> HiddenNode:
-        node = HiddenNode(to_add, active_condition)
+        node = HiddenNode(to_add) if not isinstance(to_add, Node) else to_add
+        node.set_active(active_condition)
         node.add_action(action)
         self._hidden_nodes[to_add] = node
         return self._hidden_nodes[to_add]
@@ -209,12 +219,6 @@ class Node(IName, IResetable, ActiveElem):  # TODO think of splitting the respon
             raise ParsingException("More than one hidden node is active")
         return active
 
-    def __getitem__(self, name: str):
-        return self.get(name)
-
-    def __contains__(self, node: str | stored_by_name):
-        return self.has(node)
-
     def has_node(self, node: str | Node) -> bool:
         return self._has_key_in_collection(node, self._nodes)
 
@@ -236,7 +240,7 @@ class Node(IName, IResetable, ActiveElem):  # TODO think of splitting the respon
         self._orders[count] = params
 
     def get_optional_params(self) -> Iterator[Parameter]:
-        return (param for param in self._params.values() if param.is_default_set())
+        return (param for param in self._params.values() if param.is_default_set() or not param.is_active())
 
     def _get_optional_params_count(self):
         return len(list(self.get_optional_params()))
@@ -315,7 +319,7 @@ class Node(IName, IResetable, ActiveElem):  # TODO think of splitting the respon
         for param, arg in zip(params_to_use, args):
             param.add_to_values(arg)
         rest_of_args = args[len(params_to_use):]
-        if not params_to_use and args:
+        if not params_to_use and rest_of_args:
             raise ValueError
         if params_to_use and rest_of_args:
             params_to_use[-1].add_to_values(rest_of_args)
@@ -354,18 +358,18 @@ class Node(IName, IResetable, ActiveElem):  # TODO think of splitting the respon
         return next(iter(self._action_results), None)
 
 
-class HiddenNode(Node, IActive):  # TODO: refactor to remove duplications (active and inactive conditions should be a separate class
+class HiddenNode(Node, IActivable):  # TODO: refactor to remove duplications (active and inactive conditions should be a separate class
 
     def __init__(self, name: str, active_condition: compositeActive = None, inactive_condition: compositeActive = None):
         super().__init__(name)
-        self._active_conditions = SmartList(IActive._map_to_single(active_condition)) if active_condition else SmartList()
-        self._inactive_conditions = SmartList(IActive._map_to_single(inactive_condition)) if inactive_condition else SmartList()
+        self._active_conditions = SmartList(IActivable._map_to_single(active_condition)) if active_condition else SmartList()
+        self._inactive_conditions = SmartList(IActivable._map_to_single(inactive_condition)) if inactive_condition else SmartList()
 
     def set_active_on_conditions(self, *conditions: compositeActive, func: bool_func = all):
-        self._active_conditions += IActive._map_to_single(*conditions, func=func)
+        self._active_conditions += IActivable._map_to_single(*conditions, func=func)
 
     def set_inactive_on_conditions(self, *conditions: compositeActive, func: bool_func = all):
-        self._inactive_conditions += IActive._map_to_single(*conditions, func=func)
+        self._inactive_conditions += IActivable._map_to_single(*conditions, func=func)
 
     def is_active(self) -> bool:
         return all(func() for func in self._active_conditions) and not any(func() for func in self._inactive_conditions)
@@ -401,26 +405,18 @@ class Root(Node):
     def __init__(self, name: str = 'root'):
         super().__init__(name)
 
-
-def create_iname(to_create: str | IName, of_type: Type) -> stored_by_name:
-    if isinstance(to_create, stored_by_name):
-        return to_create
-    elif isinstance(to_create, str):
-        return of_type(to_create)
-    else:
-        raise ValueError
-
 ###############
 # Final nodes #
 ###############
 
+
 default_type = str | int | list[str | int] | None
 
 
-class DefaultSmartStorage(DefaultStorage, SmartList, IName, IResetable):
+class DefaultSmartStorage(DefaultStorage, SmartList, INamable, IResetable):
 
     def __init__(self, limit: int = None, *, default=None, name=''):
-        IName.__init__(self, name)
+        INamable.__init__(self, name)
         SmartList.__init__(self, limit=limit)
         DefaultStorage.__init__(self, default)
 
@@ -444,11 +440,11 @@ class DefaultSmartStorage(DefaultStorage, SmartList, IName, IResetable):
         return super().__contains__(item)
 
 
-class FinalNode(IDefaultStorable, IName, IResetable, ActiveElem, ABC):
+class FinalNode(IDefaultStorable, INamable, IResetable, ActiveElem, ABC):
 
     def __init__(self, name: str, *, storage: DefaultSmartStorage = None, storage_limit=None, default=None, local_limit=None, activated=False):
         IDefaultStorable.__init__(self)
-        IName.__init__(self, name)
+        INamable.__init__(self, name)
         ActiveElem.__init__(self, activated)
         self._limit = local_limit
         self._storage = None
@@ -494,7 +490,7 @@ class FinalNode(IDefaultStorable, IName, IResetable, ActiveElem, ABC):
     def set_storage(self, storage: DefaultSmartStorage):
         self._storage = storage
 
-    def get_storage(self) -> DefaultStorage:
+    def get_storage(self) -> DefaultSmartStorage:
         return self._storage
 
     def set_type(self, type: Callable | None) -> None:
@@ -534,6 +530,9 @@ class Parameter(FinalNode):
         for node in nodes:
             node.add_param(self)
 
+    def reset(self):
+        self.activate()
+
 
 class Flag(FinalNode):
 
@@ -555,4 +554,4 @@ class Flag(FinalNode):
         return [self._name] + list(self._alternative_names)
 
 
-stored_by_name = Node | HiddenNode | Flag | Parameter | DefaultSmartStorage
+stored_type = Node | Flag | Parameter | HiddenNode | DefaultSmartStorage
