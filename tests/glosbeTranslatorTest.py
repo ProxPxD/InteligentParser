@@ -113,7 +113,7 @@ class GlosbeTranslatorTest(AbstractTest):
         word_flag = root.add_flag('--word', '-w')
         lang_flag = root.add_flag('--multi', '-m')
 
-        self.assertEqual(3, len(root.get_flags()), msg='Flags have not been added')
+        self.assertEqual(3, len(root.get_all_flags()), msg='Flags have not been added')
         self.assertEqual(single_flag, root.get_flag('--single'), msg='Flag got wrongly by the main name')
         self.assertEqual(single_flag, root.get('-s'), msg='Flag got wrongly by an alternative name')
         self.assertEqual(word_flag, root.get('--word'), msg='Flag got wrongly by the main name')

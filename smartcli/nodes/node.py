@@ -3,12 +3,12 @@ from __future__ import annotations
 from abc import ABC
 from inspect import signature
 from itertools import islice, zip_longest
-from typing import Iterator, Callable, Iterable, Any, TypeVar
+from typing import Iterator, Callable, Iterable, Any, TypeVar, Type
 
+from smartcli.exceptions import ParsingException
 from smartcli.nodes.interfaces import INamable, IResetable, compositeActive, active, bool_func
 from smartcli.nodes.smartList import SmartList
 from smartcli.nodes.storages import IActivable, DefaultStorage, IDefaultStorable
-from smartcli.parsingException import ParsingException
 
 
 def no_empty(func):
@@ -38,10 +38,10 @@ class ActiveElem(IActivable):
     def is_active(self):
         return self._activated
 
-    def when_active_add_name_to(self, collection: DefaultSmartStorage) -> None:
+    def when_active_add_name_to(self, collection: CliCollection) -> None:
         if collection is None:
             return
-        if not isinstance(collection, DefaultSmartStorage):
+        if not isinstance(collection, CliCollection):
             raise ParsingException
 
         self.when_active(lambda: collection.append(self.name))  # TODO has name and IActive?
@@ -63,174 +63,98 @@ class ActiveElem(IActivable):
         self._on_activation += action
 
 
-class Node(INamable, IResetable, ActiveElem):  # TODO think of splitting the responsibilities
+class FlagManagerMixin:
 
-    def __init__(self, name: str):
-        INamable.__init__(self, name)
-        ActiveElem.__init__(self, False)
-        self._nodes: dict[str, Node] = {}
-        self._hidden_nodes: dict[str, HiddenNode] = {}
-        self._flags: dict[str, Flag] = {}
-        self._params: dict[str, Parameter] = {}
-        self._collections: dict[str, DefaultSmartStorage] = {}
-        self._actions: SmartList[Callable] = SmartList()
-        self._action_results: list = []
-        self._orders: dict[int, list[str]] = {}
-        self._default_order: list[str] = []
-        self._only_hidden = False
+    def __init__(self):
+        self._flags: list[Flag] = []
 
-    def reset(self) -> None:
-        pass
+    def __contains__(self, flag: str | Flag):
+        return self.has_flag(flag)
 
-    def get_resetable(self) -> set[IResetable]:
-        resetable = set()
-        for collection in [self._nodes, self._hidden_nodes, self._flags, self._params, self._collections]:
-            collection = collection.values()
-            resetable |= self._get_resetable_from_collection(collection)
-        return resetable
-
-    def _put_in_collection(self, to_put: stored_type, collection: dict[str, INamable]) -> stored_type:
-        if to_put.name in collection:
-            type_name = to_put.__class__.__name__.__str__()
-            raise ValueError(f'{type_name} {to_put.name} already exists in {self._name}')
-        collection[to_put.name] = to_put
-        return to_put
+    def has_flag(self, flag: str | Flag):
+        flag = get_name(flag)
+        return any(flag_instance.has_name(flag) for flag_instance in self._flags)
 
     def __getitem__(self, name: str):
-        return self.get(name)
+        return self.get_flag(name)
 
-    def get(self, name: str):
-        return self._get_save(name, *self._get_inamable_collections())
+    def get_flag(self, name: str):
+        return next((flag for flag in self._flags if flag.has_name(name)))
 
-    def _get_save(self, name: str, *from_dicts: dict[str, stored_type]) -> stored_type:
-        to_return = self._get_stored(name, *from_dicts)
-        if to_return is not None:
-            return to_return
-        raise ValueError(f'Name {name} does not belong to {self.name} ')
+    def get_all_flags(self) -> list[Flag]:
+        return self._flags
 
-    def _get_stored(self, name: str, *from_dicts: dict[str, stored_type]) -> stored_type | None:
-        from_dicts = from_dicts if len(from_dicts) else self._get_inamable_collections()
-        elems = (elem for dict in from_dicts for elem in dict.values())
-        searched = next((elem for elem in elems if elem.has_name(name)), None)
-        return searched
-    
-    def __contains__(self, node: str | INamable):
-        return self.has(node)
-
-    def has(self, to_check: str | INamable) -> bool:
-        return self._has_key_in_collection(to_check, *self._get_inamable_collections())
-
-    def _has_key_in_collection(self, elem: str | INamable, *from_dict: dict[str, INamable]) -> bool:
-        if isinstance(elem, INamable):
-            elem = elem.name
-        return self._get_stored(elem, *from_dict) is not None
-
-    def _get_inamable_collections(self) -> list[dict[str, INamable]]:
-        return [self._nodes, self._hidden_nodes, self._params, self._flags, self._collections]
-
-    def add_node(self, to_add: str | Node, action: Callable = None) -> Node:
-        node = Node(name=to_add) if isinstance(to_add, str) else to_add
-        node.add_action(action)
-        return self._put_in_collection(node, self._nodes)
-
-    def get_node(self, name: str) -> Node:
-        return self._get_save(name, self._nodes, self._hidden_nodes)
-
-    def get_nodes(self) -> list[Node]:
-        return list(self._nodes.values())
-
-    def get_all_nodes(self) -> list[Node]:
-        return self.get_nodes() + self.get_hidden_nodes()
-
-    def add_flag(self, main: str | Flag, *alternative_names: str, storage: DefaultSmartStorage = None, storage_limit=0, flag_limit=None, default=None) -> Flag:
-        flag = Flag(name=main) if isinstance(main, str) else main
+    def add_flag(self, main: str | Flag, *alternative_names: str, storage: CliCollection = None, storage_limit=0, flag_limit=None, default=None) -> Flag:
+        name, flag = get_name_and_object_for_namable(main, Flag)
+        if name in self._flags:  # TODO: check alternative names
+            raise ValueError
         flag.add_alternative_names(*alternative_names)
-        flag.set_storage(storage if storage else DefaultSmartStorage(storage_limit, default=default))
+        flag.set_storage(storage if storage else CliCollection(storage_limit, default=default))
         flag.set_limit(flag_limit)
-        return self._put_in_collection(flag, self._flags)
+        self._flags.append(flag)
+        return flag
 
-    def get_flags(self) -> list[Flag]:
-        return list(self._flags.values())
+    def __len__(self):
+        return len(self._flags)
 
-    def get_flag(self, name: str) -> Flag:
-        return self._get_save(name, self._flags)
+    def filter_flags_out(self, args: list[str]) -> list[str]:
+        chunks = self._chunk_by_flags(args)
+        parameters = next(chunks, [])
+        for chunk in chunks:
+            parameters += self._filter_flags_out_of_chunk(chunk)
+        return parameters
 
-    def set_params(self, *parameters: str | DefaultSmartStorage | Parameter, storages: tuple[DefaultSmartStorage, ...] = ()) -> None:
+    def _chunk_by_flags(self, args: list[str]) -> Iterator[list[str]]:
+        curr_i = 0
+        for i, arg in enumerate(args):
+            if self.is_flag(arg):
+                yield args[curr_i: i]
+                curr_i = i
+        yield args[curr_i:]
+
+    def _filter_flags_out_of_chunk(self, chunk: list[str]) -> list[str]:
+        flag_name, args = chunk[0], chunk[1:]
+        flag = self.get_flag(flag_name)
+        flag.activate()
+        rest = flag.add_to_values(args)
+        return rest
+
+
+class ParameterManagerMixin:
+    def __init__(self):
+        self._params: dict[str, Parameter] = {}
+        self._orders: dict[int, list[str]] = {}
+        self._default_order: list[str] = []
+
+    def has_param(self, param: str | Parameter):
+        name = get_name(param)
+        return name in self._params
+
+    def get_param(self, name: str):
+        return self._params[name]
+
+    def get_all_params(self) -> list[Parameter]:
+        return list(self._params.values())
+
+    def set_params(self, *parameters: str | CliCollection | Parameter, storages: tuple[CliCollection, ...] = ()) -> None:
         for param, storage in zip_longest(parameters, storages):
             self.add_param(param, storage)
 
-    def add_param(self, to_add: str | Parameter | DefaultSmartStorage, storage: DefaultSmartStorage = None) -> Parameter:
-        if storage is not None and isinstance(to_add, DefaultSmartStorage):
+    def add_param(self, to_add: str | Parameter | CliCollection, storage: CliCollection = None) -> Parameter:
+        if storage is not None and isinstance(to_add, CliCollection):
             raise ValueError
 
-        if isinstance(to_add, DefaultSmartStorage):
+        if isinstance(to_add, CliCollection):
             storage = to_add
             to_add = to_add.name
 
-        param = Parameter(to_add) if not isinstance(to_add, Parameter) else to_add
+        name, param = get_name_and_object_for_namable(to_add, Parameter)
+        if name in self._params:
+            raise ValueError
         if storage is not None:
             param.set_storage(storage)
-        return self._put_in_collection(param, self._params)
-
-    def get_param(self, name: str) -> Parameter:
-        return self._get_save(name, self._params)
-
-    def get_params(self) -> list[Parameter]:
-        return list(self._params.values())
-
-    def add_collection(self, name: str, limit: int = None) -> DefaultSmartStorage:
-        collection = DefaultSmartStorage(limit, name=name)
-        return self._put_in_collection(collection, self._collections)
-
-    def get_collection(self, name: str) -> DefaultSmartStorage:
-        return self._get_save(name, self._collections)
-
-    def get_collections(self) -> list[DefaultSmartStorage]:
-        return list(self._collections.values())
-
-    def add_hidden_node(self, to_add: str | Node, active_condition: Callable[[], bool] = None, action: Callable = None) -> HiddenNode:
-        node = HiddenNode(to_add) if not isinstance(to_add, Node) else to_add
-        node.set_active(active_condition)
-        node.add_action(action)
-        self._hidden_nodes[to_add] = node
-        return self._hidden_nodes[to_add]
-
-    def get_hidden_node(self, name: str) -> HiddenNode:
-        return self._get_save(name, self._hidden_nodes)
-
-    def get_hidden_nodes(self):
-        return list(self._hidden_nodes.values())
-
-    def set_only_hidden_nodes(self) -> None:
-        self._only_hidden = True
-
-    def _get_active_hidden_nodes(self) -> Iterator[HiddenNode]:
-        return (node for node in self._hidden_nodes.values() if node.is_active())
-
-    def has_active_hidden_node(self) -> bool:
-        return next(self._get_active_hidden_nodes(), None) is not None
-
-    def get_active_hidden_node(self) -> HiddenNode:
-        hidden_nodes = self._get_active_hidden_nodes()
-        active = next(hidden_nodes, None)
-        if active is None:
-            raise ParsingException("None hidden node active")
-        if next(hidden_nodes, None):
-            raise ParsingException("More than one hidden node is active")
-        return active
-
-    def has_node(self, node: str | Node) -> bool:
-        return self._has_key_in_collection(node, self._nodes)
-
-    def has_flag(self, flag: str | Flag) -> bool:
-        flag = str(flag)
-        return any(flag_instance.has_name(flag) for flag_instance in self._flags.values())
-
-    def is_flag(self, flag: str):
-        return self.has_flag(flag)
-
-    def has_hidden_node(self, hidden_node: str | HiddenNode) -> bool:
-        return self._has_key_in_collection(hidden_node, self._hidden_nodes)
+        self._params[name] = param
+        return param
 
     def set_params_order(self, line: str) -> None:
         params = line.split(' ') if len(line) else []
@@ -255,33 +179,6 @@ class Node(INamable, IResetable, ActiveElem):  # TODO think of splitting the res
             self._default_order.append(name)
             if default is not None:
                 self.get_param(name).set_default(default)
-
-    ### Parsing
-
-    def filter_flags_out(self, args: list[str]) -> list[str]:
-        chunks = self._chunk_by_flags(args)
-        parameters = next(chunks, [])
-        parameters += list(self._filter_flags_out_of_chunks(chunks))
-        return parameters
-
-    def _chunk_by_flags(self, args: list[str]) -> Iterator[list[str]]:
-        curr_i = 0
-        for i, arg in enumerate(args):
-            if self.is_flag(arg):
-                yield args[curr_i: i]
-                curr_i = i
-        yield args[curr_i:]
-
-    @flatten_once
-    def _filter_flags_out_of_chunks(self, chunks) -> Iterator[list[str]]:
-        return (self._filter_flags_out_of_chunk(chunk) for chunk in chunks)
-
-    def _filter_flags_out_of_chunk(self, chunk: list[str]) -> list[str]:
-        flag_name, flag_args = chunk[0], chunk[1:]
-        flag = self.get_flag(flag_name)
-        flag.activate()
-        rest = flag.add_to_values(flag_args)
-        return rest
 
     def parse_node_args(self, args: list[str]):
         parameters_number = min(len(args), len(self._params))
@@ -338,6 +235,130 @@ class Node(INamable, IResetable, ActiveElem):  # TODO think of splitting the res
     def _parse_list_args_by_order(self, args: list[str], order: list[str]) -> None:
         self.get_param(order[-1]).add_to_values(args)
 
+
+class Node(INamable, IResetable, ActiveElem, ParameterManagerMixin, FlagManagerMixin):  # TODO think of splitting the responsibilities
+
+    def __init__(self, name: str):
+        INamable.__init__(self, name)
+        ActiveElem.__init__(self, False)
+        self._nodes: dict[str, Node] = {}
+        self._hidden_nodes: dict[str, HiddenNode] = {}
+        self._collections: dict[str, CliCollection] = {}
+        self._actions: SmartList[Callable] = SmartList()
+        self._action_results: list = []
+        self._only_hidden = False
+
+    # Resetable
+
+    def reset(self) -> None:
+        pass
+
+    def get_resetable(self) -> set[IResetable]:
+        resetable = set()
+        for collection in [self._nodes, self._hidden_nodes, self.get_all_flags(), self.get_all_params(), self._collections]:
+            collection = collection.values()
+            resetable |= set(resetable for elem in collection for resetable in elem._get_resetable())
+        return resetable
+
+    # Common
+
+    def __getitem__(self, name: str):
+        return self.get(name)
+
+    def get(self, name: str) -> Any:
+        for method in self._get_getters_of_all_storages():
+            try:
+                return method(name)
+            except Exception:
+                pass
+        raise LookupError
+    
+    def __contains__(self, node: str | INamable):
+        return self.has(node)
+
+    def has(self, to_check: str | INamable) -> bool:
+        try:
+            name = get_name(to_check)
+            result = self.get(name)
+            return result is not None
+        except LookupError:
+            return False
+
+    def _get_getters_of_all_storages(self) -> Iterable[Callable[[str], stored_type]]:
+        return [self.get_node, self.get_hidden_node, self.get_flag, self.get_param, self.get_collection]
+
+    # Nodes
+
+    def add_node(self, to_add: str | Node, action: Callable = None) -> Node:
+        name, node = get_name_and_object_for_namable(to_add, Node)
+        if name in self._nodes:
+            raise ValueError
+        node.add_action(action)
+        self._nodes[name] = node
+        return node
+
+    def get_node(self, name: str) -> Node:
+        return next((nodes[name] for nodes in [self._nodes, self._hidden_nodes] if name in nodes))
+
+    def has_node(self, node: str | Node) -> bool:
+        name = get_name(node)
+        return name in self._nodes
+
+    def get_nodes(self) -> list[Node]:
+        return list(self._nodes.values())
+
+    def get_all_nodes(self) -> list[Node]:
+        return self.get_nodes() + self.get_hidden_nodes()
+
+    # Collections
+
+    def add_collection(self, name: str, limit: int = None) -> CliCollection:
+        self._collections[name] = CliCollection(limit, name=name)
+        return self._collections[name]
+
+    def get_collection(self, name: str) -> CliCollection:
+        return self._collections[name]
+
+    def get_collections(self) -> list[CliCollection]:
+        return list(self._collections.values())
+
+    # Hidden nodes
+
+    def add_hidden_node(self, to_add: str | Node, active_condition: Callable[[], bool] = None, action: Callable = None) -> HiddenNode:
+        node = HiddenNode(to_add) if not isinstance(to_add, Node) else to_add
+        node.set_active(active_condition)
+        node.add_action(action)
+        self._hidden_nodes[to_add] = node
+        return self._hidden_nodes[to_add]
+
+    def get_hidden_node(self, name: str) -> HiddenNode:
+        return self._hidden_nodes[name]
+
+    def get_hidden_nodes(self):
+        return list(self._hidden_nodes.values())
+
+    def set_only_hidden_nodes(self) -> None:
+        self._only_hidden = True
+
+    def _get_active_hidden_nodes(self) -> Iterator[HiddenNode]:
+        return (node for node in self._hidden_nodes.values() if node.is_active())
+
+    def has_active_hidden_node(self) -> bool:
+        return next(self._get_active_hidden_nodes(), None) is not None
+
+    def get_active_hidden_node(self) -> HiddenNode:
+        hidden_nodes = self._get_active_hidden_nodes()
+        active = next(hidden_nodes, None)
+        if active is None:
+            raise ParsingException("None hidden node active")
+        if next(hidden_nodes, None):
+            raise ParsingException("More than one hidden node is active")
+        return active
+
+    def has_hidden_node(self, hidden_node: str | HiddenNode) -> bool:
+        name = get_name(hidden_node)
+        return name in self._hidden_nodes
+
     # Actions
 
     def add_action(self, action: Callable) -> None:
@@ -391,12 +412,12 @@ class HiddenNode(Node, IActivable):  # TODO: refactor to remove duplications (ac
     def set_inactive_or(self, *when: compositeActive):
         self.set_inactive_on_conditions(*when, func=any)
 
-    def set_active_on_flags_in_collection(self, collection: DefaultSmartStorage, *flags: Flag, but_not: list[Flag] | Flag = None):
+    def set_active_on_flags_in_collection(self, collection: CliCollection, *flags: Flag, but_not: list[Flag] | Flag = None):
         but_not = [but_not] if isinstance(but_not, Flag) else []
         self.set_active_on_conditions(lambda: all((flag in collection for flag in flags)))
         self.set_inactive_on_flags_in_collection(collection, *but_not, func=any)
 
-    def set_inactive_on_flags_in_collection(self, collection: DefaultSmartStorage, *flags: Flag, func=all):
+    def set_inactive_on_flags_in_collection(self, collection: CliCollection, *flags: Flag, func=all):
         self.set_inactive_on_conditions(lambda: func((flag in collection for flag in flags)))
 
 
@@ -413,7 +434,7 @@ class Root(Node):
 default_type = str | int | list[str | int] | None
 
 
-class DefaultSmartStorage(DefaultStorage, SmartList, INamable, IResetable):
+class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
 
     def __init__(self, limit: int = None, *, default=None, name=''):
         INamable.__init__(self, name)
@@ -442,7 +463,7 @@ class DefaultSmartStorage(DefaultStorage, SmartList, INamable, IResetable):
 
 class FinalNode(IDefaultStorable, INamable, IResetable, ActiveElem, ABC):
 
-    def __init__(self, name: str, *, storage: DefaultSmartStorage = None, storage_limit=None, default=None, local_limit=None, activated=False):
+    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit=None, default=None, local_limit=None, activated=False):
         IDefaultStorable.__init__(self)
         INamable.__init__(self, name)
         ActiveElem.__init__(self, activated)
@@ -452,7 +473,7 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ActiveElem, ABC):
             raise ValueError
 
         if storage is None:
-            storage = DefaultSmartStorage(limit=storage_limit, default=default)
+            storage = CliCollection(limit=storage_limit, default=default)
 
         self._storage = storage
 
@@ -462,7 +483,7 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ActiveElem, ABC):
     def _get_resetable(self) -> set[IResetable]:
         return set(self._storage)
 
-    def set_limit(self, limit: int | None, *, storage: DefaultSmartStorage = None) -> None:
+    def set_limit(self, limit: int | None, *, storage: CliCollection = None) -> None:
         if storage is not None:
             self.set_storage(storage)
         self._limit = limit
@@ -470,7 +491,7 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ActiveElem, ABC):
     def get_limit(self) -> int:
         return self._limit
 
-    def set_storage_limit(self, limit: int | None, *, storage: DefaultSmartStorage = None) -> None:
+    def set_storage_limit(self, limit: int | None, *, storage: CliCollection = None) -> None:
         if storage:
             self.set_storage(storage)
         self._storage.set_limit(limit)
@@ -487,10 +508,10 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ActiveElem, ABC):
         rest = self._storage.filter_out(to_add)
         return rest
 
-    def set_storage(self, storage: DefaultSmartStorage):
+    def set_storage(self, storage: CliCollection):
         self._storage = storage
 
-    def get_storage(self) -> DefaultSmartStorage:
+    def get_storage(self) -> CliCollection:
         return self._storage
 
     def set_type(self, type: Callable | None) -> None:
@@ -522,7 +543,7 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ActiveElem, ABC):
 
 class Parameter(FinalNode):
 
-    def __init__(self, name: str, *, storage: DefaultSmartStorage = None, storage_limit: int | None = 1, default: default_type = None, parameter_limit=1):
+    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit: int | None = 1, default: default_type = None, parameter_limit=1):
         super().__init__(name, storage=storage, storage_limit=storage_limit, default=default, local_limit=parameter_limit)
         self.set_activated(True)
 
@@ -536,7 +557,7 @@ class Parameter(FinalNode):
 
 class Flag(FinalNode):
 
-    def __init__(self, name, *alternative_names: str, storage: DefaultSmartStorage = None, storage_limit: int = 0, default: default_type = None, local_limit=None):
+    def __init__(self, name, *alternative_names: str, storage: CliCollection = None, storage_limit: int = 0, default: default_type = None, local_limit=None):
         super().__init__(name, storage=storage, storage_limit=storage_limit, default=default, local_limit=local_limit, activated=False)
         self._alternative_names = set(alternative_names)
         self._on_activation: SmartList[Callable] = SmartList()
@@ -554,4 +575,15 @@ class Flag(FinalNode):
         return [self._name] + list(self._alternative_names)
 
 
-stored_type = Node | Flag | Parameter | HiddenNode | DefaultSmartStorage
+stored_type = Node | Flag | Parameter | HiddenNode | CliCollection
+
+
+def get_name_and_object_for_namable(arg: str | INamable, type: Type) -> tuple[str, stored_type | INamable]:
+    if isinstance(arg, str):
+        arg = type(name=arg)
+    name = arg.name
+    return name, arg
+
+
+def get_name(arg: str | INamable) -> str:
+    return arg if isinstance(arg, str) else arg.name

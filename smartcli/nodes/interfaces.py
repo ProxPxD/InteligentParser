@@ -29,10 +29,6 @@ class IResetable(abc.ABC):
     def _get_resetable(self) -> set[IResetable]:
         raise NotImplemented
 
-    def _get_resetable_from_collection(self, collection: Iterable[IResetable]) -> set(IResetable):
-        return set(resetable for elem in collection for resetable in elem._get_resetable())
-
-
 class IActivable(abc.ABC):
 
     @staticmethod
@@ -92,6 +88,10 @@ class IDefaultStorable(abc.ABC):
         Takes a class to witch argument should be mapped
         Takes None if there shouldn't be any type control (default)
         '''
+        raise NotImplemented
+
+    @abc.abstractmethod
+    def get_type(self) -> Callable:
         raise NotImplemented
 
     def set_default(self, default: Any) -> None:

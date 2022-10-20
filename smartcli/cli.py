@@ -72,7 +72,7 @@ class ParsingResult:  # TODO: implement default values/methods (like name, etc.)
 
     def __init__(self, node: Node):
         setattr(self, 'node', node)
-        for param in node.get_params():
+        for param in node.get_all_params():
             setattr(self, f'get_{param.name}', ParsingResult.make_getter(param))
 
     @staticmethod
