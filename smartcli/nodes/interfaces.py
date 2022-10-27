@@ -6,7 +6,8 @@ from typing import Iterable, Callable, Any
 
 class INamable:
 
-    def __init__(self, name: str = ''):
+    def __init__(self, name: str = '', **kwargs):
+        super().__init__(**kwargs)
         self._name = name
 
     @property
@@ -22,6 +23,9 @@ class INamable:
 
 class IResetable(abc.ABC):
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     @abc.abstractmethod
     def reset(self):
         raise NotImplemented
@@ -29,11 +33,12 @@ class IResetable(abc.ABC):
     def _get_resetable(self) -> set[IResetable]:
         raise NotImplemented
 
+
 class IActivable(abc.ABC):
 
     @staticmethod
     def _map_to_single(*to_map: compositeActive, func: bool_func = all) -> Callable[[], bool] | None:
-        if not to_map:
+        if not to_map :
             raise ValueError
         if len(to_map) == 1 and isinstance(to_map[0], Callable):
             return to_map[0]
@@ -55,20 +60,6 @@ class IActivable(abc.ABC):
             return IActivable.merge_conditions(tuple(to_check), func)()
         else:
             raise ValueError
-
-    def activate(self):
-        self.set_activated(True)
-
-    def deactivate(self):
-        self.set_activated(False)
-
-    @abc.abstractmethod
-    def set_activated(self, val: bool):
-        raise NotImplemented
-
-    @abc.abstractmethod
-    def when_active(self, func: Callable) -> None:
-        raise NotImplemented
 
     @abc.abstractmethod
     def is_active(self) -> bool:

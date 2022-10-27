@@ -11,40 +11,79 @@ from smartcli.nodes.smartList import SmartList
 from smartcli.nodes.storages import IActivable, DefaultStorage, IDefaultStorable
 
 
-def no_empty(func):
-    return lambda to_filter: (elem for elem in func(to_filter) if elem)
+###########################
+# Activations and actions #
+###########################
 
-
-def flatten_once(func):
-    return lambda self, to_flatten: (elem for lst in func(self, to_flatten) for elem in lst)
-
-
-class ActiveElem(IActivable):
-    T = TypeVar('T')
+class ImplicitlyActivableMixin(IActivable):
 
     def __init__(self, activated=False):
+        super().__init__()
         self._activated = activated
-        self._on_activation: SmartList[Callable] = SmartList()
+
+    def activate(self):
+        self.set_activated(True)
+
+    def deactivate(self):
+        self.set_activated(False)
 
     def set_activated(self, val: bool):
         self._activated = val
-        if self._activated:
-            self._call_all_on_activation_functions()
 
-    def _call_all_on_activation_functions(self):
-        for func in self._on_activation:
-            func()
-
-    def is_active(self):
+    def is_active(self) -> bool:
         return self._activated
 
-    def when_active_add_name_to(self, collection: CliCollection) -> None:
-        if collection is None:
-            return
-        if not isinstance(collection, CliCollection):
-            raise ParsingException
 
-        self.when_active(lambda: collection.append(self.name))  # TODO has name and IActive?
+class ConditionallyActiveMixin(IActivable):
+
+    def __init__(self, active_condition: compositeActive = None, inactive_condition: compositeActive = None, **kwargs):
+        super().__init__(**kwargs)
+        self._active_conditions = SmartList(self._map_to_single(active_condition)) if active_condition else SmartList()
+        self._inactive_conditions = SmartList(self._map_to_single(inactive_condition)) if inactive_condition else SmartList()
+
+    def is_active(self) -> bool:
+        return all(func() for func in self._active_conditions) and not any(func() for func in self._inactive_conditions)
+
+    def set_active_on_conditions(self, *conditions: compositeActive, func: bool_func = all):
+        if conditions and conditions[0]:
+            self._active_conditions += IActivable._map_to_single(*conditions, func=func)
+
+    def set_inactive_on_conditions(self, *conditions: compositeActive, func: bool_func = all):
+        if conditions and conditions[0]:
+            self._inactive_conditions += IActivable._map_to_single(*conditions, func=func)
+
+    def set_active(self, first_when: active, *when: compositeActive, but_not: compositeActive = None):
+        self.set_active_and(first_when, *when)
+        if but_not:
+            self.set_inactive_or(*but_not if isinstance(but_not, Iterable) else but_not)
+
+    def set_active_and(self, *when: compositeActive):
+        self.set_active_on_conditions(*when, func=all)
+
+    def set_active_or(self, *when: compositeActive):
+        self.set_active_on_conditions(*when, func=any)
+
+    def set_inactive_and(self, *when: compositeActive):
+        self.set_inactive_on_conditions(*when, func=all)
+
+    def set_inactive_or(self, *when: compositeActive):
+        self.set_inactive_on_conditions(*when, func=any)
+
+    def set_active_on_flags_in_collection(self, collection: CliCollection, *flags: Flag, but_not: list[Flag] | Flag = None):
+        but_not = [but_not] if isinstance(but_not, Flag) else []
+        self.set_active_on_conditions(lambda: all((flag in collection for flag in flags)))
+        self.set_inactive_on_flags_in_collection(collection, *but_not, func=any)
+
+    def set_inactive_on_flags_in_collection(self, collection: CliCollection, *flags: Flag, func=all):
+        self.set_inactive_on_conditions(lambda: func((flag in collection for flag in flags)))
+
+
+class ActionOnActivationMixin:
+    T = TypeVar('T')
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._on_activation: SmartList[Callable] = SmartList()
 
     def when_active_turn_off(self, *to_turn_off: IActivable) -> None:
         self.when_active_set_activated(False, *to_turn_off)
@@ -62,10 +101,50 @@ class ActiveElem(IActivable):
     def when_active(self, action: Callable) -> None:
         self._on_activation += action
 
+    def when_active_add_name_to(self, collection: CliCollection) -> None:
+        if collection is None:
+            return
+        if not isinstance(collection, CliCollection):
+            raise ParsingException
+
+        self.when_active(lambda: collection.append(self.name))  # TODO has name and IActive?
+
+    def _perform_on_activation(self):
+        for func in self._on_activation:
+            func()
+
+
+class ImplicitActionActivation(ImplicitlyActivableMixin, ActionOnActivationMixin):
+
+    def __init__(self, activated=False):
+        super().__init__(activated=activated)
+
+    def activate(self):
+        super().activate()
+        self._perform_on_activation()
+
+
+class ConditionalActionActivation(ConditionallyActiveMixin, ActionOnActivationMixin):
+
+    def __init__(self, active_condition: compositeActive = None, inactive_condition: compositeActive = None, **kwargs):
+        super().__init__(active_condition=active_condition, inactive_condition=inactive_condition, **kwargs)
+
+    def is_active(self) -> bool:
+        result = super().is_active()
+        if result:
+            self._perform_on_activation()
+        return result
+
+
+###########################
+# Managers and Containers #
+###########################
+
 
 class FlagManagerMixin:
 
-    def __init__(self):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self._flags: list[Flag] = []
 
     def __contains__(self, flag: str | Flag):
@@ -86,7 +165,7 @@ class FlagManagerMixin:
 
     def add_flag(self, main: str | Flag, *alternative_names: str, storage: CliCollection = None, storage_limit=0, flag_limit=None, default=None) -> Flag:
         name, flag = get_name_and_object_for_namable(main, Flag)
-        if name in self._flags:  # TODO: check alternative names
+        if self.has_flag(name):  # TODO: check alternative names
             raise ValueError
         flag.add_alternative_names(*alternative_names)
         flag.set_storage(storage if storage else CliCollection(storage_limit, default=default))
@@ -107,7 +186,7 @@ class FlagManagerMixin:
     def _chunk_by_flags(self, args: list[str]) -> Iterator[list[str]]:
         curr_i = 0
         for i, arg in enumerate(args):
-            if self.is_flag(arg):
+            if self.has_flag(arg):
                 yield args[curr_i: i]
                 curr_i = i
         yield args[curr_i:]
@@ -121,7 +200,8 @@ class FlagManagerMixin:
 
 
 class ParameterManagerMixin:
-    def __init__(self):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self._params: dict[str, Parameter] = {}
         self._orders: dict[int, list[str]] = {}
         self._default_order: list[str] = []
@@ -236,13 +316,54 @@ class ParameterManagerMixin:
         self.get_param(order[-1]).add_to_values(args)
 
 
-class Node(INamable, IResetable, ActiveElem, ParameterManagerMixin, FlagManagerMixin):  # TODO think of splitting the responsibilities
-
-    def __init__(self, name: str):
-        INamable.__init__(self, name)
-        ActiveElem.__init__(self, False)
-        self._nodes: dict[str, Node] = {}
+class HiddenNodeManagerMixin:
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self._hidden_nodes: dict[str, HiddenNode] = {}
+
+    def add_hidden_node(self, to_add: str | Node, active_condition: Callable[[], bool] = None, action: Callable = None) -> HiddenNode:
+        node = HiddenNode(to_add) if not isinstance(to_add, Node) else to_add
+        node.set_active(active_condition)
+        node.add_action(action)
+        self._hidden_nodes[to_add] = node
+        return self._hidden_nodes[to_add]
+
+    def get_hidden_node(self, name: str) -> HiddenNode:
+        return self._hidden_nodes[name]
+
+    def get_hidden_nodes(self):
+        return list(self._hidden_nodes.values())
+
+    def _get_active_hidden_nodes(self) -> Iterator[HiddenNode]:
+        return (node for node in self._hidden_nodes.values() if node.is_active())
+
+    def has_active_hidden_node(self) -> bool:
+        return next(self._get_active_hidden_nodes(), None) is not None
+
+    def get_active_hidden_node(self) -> HiddenNode:
+        hidden_nodes = self._get_active_hidden_nodes()
+        active = next(hidden_nodes, None)
+        if active is None:
+            raise ParsingException("None hidden node active")
+        if next(hidden_nodes, None):
+            raise ParsingException("More than one hidden node is active")
+        return active
+
+    def has_hidden_node(self, hidden_node: str | HiddenNode) -> bool:
+        name = get_name(hidden_node)
+        return name in self._hidden_nodes
+
+
+#############
+# CLI parts #
+#############
+
+
+class Node(INamable, IResetable, ParameterManagerMixin, FlagManagerMixin, HiddenNodeManagerMixin):
+
+    def __init__(self, name: str, **kwargs):
+        super().__init__(name=name, **kwargs)
+        self._nodes: dict[str, Node] = {}
         self._collections: dict[str, CliCollection] = {}
         self._actions: SmartList[Callable] = SmartList()
         self._action_results: list = []
@@ -310,6 +431,9 @@ class Node(INamable, IResetable, ActiveElem, ParameterManagerMixin, FlagManagerM
     def get_all_nodes(self) -> list[Node]:
         return self.get_nodes() + self.get_hidden_nodes()
 
+    def set_only_hidden_nodes(self) -> None:
+        self._only_hidden = True
+
     # Collections
 
     def add_collection(self, name: str, limit: int = None) -> CliCollection:
@@ -321,43 +445,6 @@ class Node(INamable, IResetable, ActiveElem, ParameterManagerMixin, FlagManagerM
 
     def get_collections(self) -> list[CliCollection]:
         return list(self._collections.values())
-
-    # Hidden nodes
-
-    def add_hidden_node(self, to_add: str | Node, active_condition: Callable[[], bool] = None, action: Callable = None) -> HiddenNode:
-        node = HiddenNode(to_add) if not isinstance(to_add, Node) else to_add
-        node.set_active(active_condition)
-        node.add_action(action)
-        self._hidden_nodes[to_add] = node
-        return self._hidden_nodes[to_add]
-
-    def get_hidden_node(self, name: str) -> HiddenNode:
-        return self._hidden_nodes[name]
-
-    def get_hidden_nodes(self):
-        return list(self._hidden_nodes.values())
-
-    def set_only_hidden_nodes(self) -> None:
-        self._only_hidden = True
-
-    def _get_active_hidden_nodes(self) -> Iterator[HiddenNode]:
-        return (node for node in self._hidden_nodes.values() if node.is_active())
-
-    def has_active_hidden_node(self) -> bool:
-        return next(self._get_active_hidden_nodes(), None) is not None
-
-    def get_active_hidden_node(self) -> HiddenNode:
-        hidden_nodes = self._get_active_hidden_nodes()
-        active = next(hidden_nodes, None)
-        if active is None:
-            raise ParsingException("None hidden node active")
-        if next(hidden_nodes, None):
-            raise ParsingException("More than one hidden node is active")
-        return active
-
-    def has_hidden_node(self, hidden_node: str | HiddenNode) -> bool:
-        name = get_name(hidden_node)
-        return name in self._hidden_nodes
 
     # Actions
 
@@ -379,59 +466,19 @@ class Node(INamable, IResetable, ActiveElem, ParameterManagerMixin, FlagManagerM
         return next(iter(self._action_results), None)
 
 
-class HiddenNode(Node, IActivable):  # TODO: refactor to remove duplications (active and inactive conditions should be a separate class
+class HiddenNode(Node, ConditionalActionActivation):  # TODO: refactor to remove duplications (active and inactive conditions should be a separate class
 
     def __init__(self, name: str, active_condition: compositeActive = None, inactive_condition: compositeActive = None):
-        super().__init__(name)
-        self._active_conditions = SmartList(IActivable._map_to_single(active_condition)) if active_condition else SmartList()
-        self._inactive_conditions = SmartList(IActivable._map_to_single(inactive_condition)) if inactive_condition else SmartList()
-
-    def set_active_on_conditions(self, *conditions: compositeActive, func: bool_func = all):
-        self._active_conditions += IActivable._map_to_single(*conditions, func=func)
-
-    def set_inactive_on_conditions(self, *conditions: compositeActive, func: bool_func = all):
-        self._inactive_conditions += IActivable._map_to_single(*conditions, func=func)
-
-    def is_active(self) -> bool:
-        return all(func() for func in self._active_conditions) and not any(func() for func in self._inactive_conditions)
-
-    def set_active(self, first_when: active, *when: compositeActive, but_not: compositeActive = None):
-        self.set_active_and(first_when, *when)
-        if but_not:
-            self.set_inactive_or(*but_not if isinstance(but_not, Iterable) else but_not)
-
-    def set_active_and(self, *when: compositeActive):
-        self.set_active_on_conditions(*when, func=all)
-
-    def set_active_or(self, *when: compositeActive):
-        self.set_active_on_conditions(*when, func=any)
-
-    def set_inactive_and(self, *when: compositeActive):
-        self.set_inactive_on_conditions(*when, func=all)
-
-    def set_inactive_or(self, *when: compositeActive):
-        self.set_inactive_on_conditions(*when, func=any)
-
-    def set_active_on_flags_in_collection(self, collection: CliCollection, *flags: Flag, but_not: list[Flag] | Flag = None):
-        but_not = [but_not] if isinstance(but_not, Flag) else []
-        self.set_active_on_conditions(lambda: all((flag in collection for flag in flags)))
-        self.set_inactive_on_flags_in_collection(collection, *but_not, func=any)
-
-    def set_inactive_on_flags_in_collection(self, collection: CliCollection, *flags: Flag, func=all):
-        self.set_inactive_on_conditions(lambda: func((flag in collection for flag in flags)))
+        super().__init__(name=name, active_condition=active_condition, inactive_condition=inactive_condition)
+        # TODO:
+        # super(Node, self).__init__(name=name)
+        # super(ConditionallyActiveMixin, self).__init__(active_condition=active_condition, inactive_condition=inactive_condition)
 
 
 class Root(Node):
 
     def __init__(self, name: str = 'root'):
-        super().__init__(name)
-
-###############
-# Final nodes #
-###############
-
-
-default_type = str | int | list[str | int] | None
+        super().__init__(name=name)
 
 
 class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
@@ -447,7 +494,7 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
     def _get_resetable(self) -> set[IResetable]:
         return set()
 
-    def add_to_add_names(self, *active_elems: ActiveElem):
+    def add_to_add_names(self, *active_elems: ImplicitActionActivation):
         for active_elem in active_elems:
             active_elem.when_active_add_name_to(self)
 
@@ -461,12 +508,12 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
         return super().__contains__(item)
 
 
-class FinalNode(IDefaultStorable, INamable, IResetable, ActiveElem, ABC):
+class FinalNode(IDefaultStorable, INamable, IResetable, ImplicitActionActivation, ABC):
 
     def __init__(self, name: str, *, storage: CliCollection = None, storage_limit=None, default=None, local_limit=None, activated=False):
         IDefaultStorable.__init__(self)
         INamable.__init__(self, name)
-        ActiveElem.__init__(self, activated)
+        ImplicitActionActivation.__init__(self, activated)
         self._limit = local_limit
         self._storage = None
         if storage is not None and any(arg is not None for arg in (storage_limit, default)):
@@ -517,6 +564,9 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ActiveElem, ABC):
     def set_type(self, type: Callable | None) -> None:
         self._storage.set_type(type)
 
+    def get_type(self) -> Callable:
+        return self._storage.get_type()
+
     def set_get_default(self, get_default: Callable) -> None:
         self._storage.set_get_default(get_default)
 
@@ -539,6 +589,9 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ActiveElem, ABC):
         if len(to_return) == 1:
             to_return = to_return[0]
         return to_return if to_return else None
+
+
+default_type = str | int | list[str | int] | None
 
 
 class Parameter(FinalNode):
