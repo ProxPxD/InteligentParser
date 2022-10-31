@@ -13,11 +13,12 @@ class CategorierTest(AbstractTest):
         self.cli = Cli()
         root = self.cli.root
         # Collections
-        operations = root.add_collection('operations', None)
+        operations = root.add_collection('operations', 1)
         operands = root.add_collection('operands', 2)
 
         # Flags
         of = root.add_flag('of', 'to', 'from', 'in', storage=operands)
+        by = root.add_flag('by', storage_limit=1)
         descriptions = root.add_flag('-d', 'about', storage_limit=None)
 
         # Common params
@@ -25,14 +26,14 @@ class CategorierTest(AbstractTest):
         id_param = Parameter('id')
         categories = Parameter('categories', storage_limit=None)
 
-        of.when_active_add_name_to()
-        operand_param.set_activated()
+        operand_param.set_inactive_on_flags(of)
 
         add_node = root.add_node("add")
         del_node = root.add_node("del")
         show_node = root.add_node("show")
         search_node = root.add_node("search")
         rename_node = root.add_node("rename")
+
         operations.add_to_add_names(add_node, del_node, show_node, search_node, rename_node)
 
         # add(idea | cat | descr) * < NAME > (CAT...)({to < idea | cat >}) * ({-d < DESCR >})
@@ -46,7 +47,5 @@ class CategorierTest(AbstractTest):
         show_node.set_params(operand_param, id_param)
         search_node.set_params(operand_param, categories)
         rename_node.set_params(operand_param, id_param, 'new_name')
-
-
 
         return self.cli

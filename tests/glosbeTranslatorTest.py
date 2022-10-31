@@ -26,7 +26,8 @@ class GlosbeTranslatorTest(AbstractTest):
         return self.langs[:n] if n < len(self.langs) else self.langs
 
     def create_correct_cli(self) -> Cli:
-        root = Root('root')
+        self.cli = Cli()
+        root = self.cli.root
         root.set_only_hidden_nodes()
         # Collections
         current_modes = root.add_collection('current_modes')
@@ -85,8 +86,6 @@ class GlosbeTranslatorTest(AbstractTest):
         double_multi_node.set_params('word', 'from_lang', 'to_langs', storages=(words, from_langs, to_langs))
         double_multi_node.set_params_order('from_lang')
         double_multi_node.set_params_order('')
-
-        self.cli = Cli(root=root)
         return self.cli
 
     def test_getting_default_value(self):
@@ -113,7 +112,7 @@ class GlosbeTranslatorTest(AbstractTest):
         word_flag = root.add_flag('--word', '-w')
         lang_flag = root.add_flag('--multi', '-m')
 
-        self.assertEqual(3, len(root.get_all_flags()), msg='Flags have not been added')
+        self.assertEqual(3, len(root.get_flags()), msg='Flags have not been added')
         self.assertEqual(single_flag, root.get_flag('--single'), msg='Flag got wrongly by the main name')
         self.assertEqual(single_flag, root.get('-s'), msg='Flag got wrongly by an alternative name')
         self.assertEqual(word_flag, root.get('--word'), msg='Flag got wrongly by the main name')

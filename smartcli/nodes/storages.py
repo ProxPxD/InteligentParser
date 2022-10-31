@@ -7,7 +7,8 @@ from smartcli.nodes.interfaces import IActivable, IDefaultStorable
 
 class DefaultStorage(IDefaultStorable):
 
-    def __init__(self, default: Any = None):
+    def __init__(self, default: Any = None, **kwargs):
+        super().__init__(**kwargs)
         self._type: Callable | None = None
         self._get_defaults = {lambda: True: lambda: default} if default is not None else {}
 

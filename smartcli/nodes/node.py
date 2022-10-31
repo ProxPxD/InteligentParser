@@ -17,8 +17,8 @@ from smartcli.nodes.storages import IActivable, DefaultStorage, IDefaultStorable
 
 class ImplicitlyActivableMixin(IActivable):
 
-    def __init__(self, activated=False):
-        super().__init__()
+    def __init__(self, activated=False, **kwargs):
+        super().__init__(**kwargs)
         self._activated = activated
 
     def activate(self):
@@ -36,13 +36,21 @@ class ImplicitlyActivableMixin(IActivable):
 
 class ConditionallyActiveMixin(IActivable):
 
-    def __init__(self, active_condition: compositeActive = None, inactive_condition: compositeActive = None, **kwargs):
+    def __init__(self, active_condition: compositeActive = None, inactive_condition: compositeActive = None, default_state: bool = None, **kwargs):
         super().__init__(**kwargs)
         self._active_conditions = SmartList(self._map_to_single(active_condition)) if active_condition else SmartList()
         self._inactive_conditions = SmartList(self._map_to_single(inactive_condition)) if inactive_condition else SmartList()
+        self._default: bool = default_state
 
     def is_active(self) -> bool:
+        if not self._active_conditions and not self._inactive_conditions:
+            return self._get_default_state()
         return all(func() for func in self._active_conditions) and not any(func() for func in self._inactive_conditions)
+
+    def _get_default_state(self):
+        if self._default is None:
+            raise ValueError
+        return self._default
 
     def set_active_on_conditions(self, *conditions: compositeActive, func: bool_func = all):
         if conditions and conditions[0]:
@@ -68,6 +76,12 @@ class ConditionallyActiveMixin(IActivable):
 
     def set_inactive_or(self, *when: compositeActive):
         self.set_inactive_on_conditions(*when, func=any)
+
+    def set_active_on_flags(self, *flags: Flag, func=any):
+        self.set_active_on_conditions(lambda: func([flag.is_active() for flag in flags]))
+
+    def set_inactive_on_flags(self, *flags: Flag, func=any):
+        self.set_inactive_on_conditions(lambda: func([flag.is_active() for flag in flags]))
 
     def set_active_on_flags_in_collection(self, collection: CliCollection, *flags: Flag, but_not: list[Flag] | Flag = None):
         but_not = [but_not] if isinstance(but_not, Flag) else []
@@ -116,8 +130,8 @@ class ActionOnActivationMixin:
 
 class ImplicitActionActivation(ImplicitlyActivableMixin, ActionOnActivationMixin):
 
-    def __init__(self, activated=False):
-        super().__init__(activated=activated)
+    def __init__(self, activated=False, **kwargs):
+        super().__init__(activated=activated, **kwargs)
 
     def activate(self):
         super().activate()
@@ -160,7 +174,7 @@ class FlagManagerMixin:
     def get_flag(self, name: str):
         return next((flag for flag in self._flags if flag.has_name(name)))
 
-    def get_all_flags(self) -> list[Flag]:
+    def get_flags(self) -> list[Flag]:
         return self._flags
 
     def add_flag(self, main: str | Flag, *alternative_names: str, storage: CliCollection = None, storage_limit=0, flag_limit=None, default=None) -> Flag:
@@ -213,7 +227,7 @@ class ParameterManagerMixin:
     def get_param(self, name: str):
         return self._params[name]
 
-    def get_all_params(self) -> list[Parameter]:
+    def get_params(self) -> list[Parameter]:
         return list(self._params.values())
 
     def set_params(self, *parameters: str | CliCollection | Parameter, storages: tuple[CliCollection, ...] = ()) -> None:
@@ -261,7 +275,7 @@ class ParameterManagerMixin:
                 self.get_param(name).set_default(default)
 
     def parse_node_args(self, args: list[str]):
-        parameters_number = min(len(args), len(self._params))
+        parameters_number = min(len(args), len(self.get_params()))
         if self._is_parsing_possible(parameters_number):
             self._set_default_order_if_not_exist()
             self._parse_node_args_by_defaults(parameters_number, args)
@@ -318,7 +332,7 @@ class ParameterManagerMixin:
 
 class HiddenNodeManagerMixin:
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__()
         self._hidden_nodes: dict[str, HiddenNode] = {}
 
     def add_hidden_node(self, to_add: str | Node, active_condition: Callable[[], bool] = None, action: Callable = None) -> HiddenNode:
@@ -359,11 +373,11 @@ class HiddenNodeManagerMixin:
 #############
 
 
-class Node(INamable, IResetable, ParameterManagerMixin, FlagManagerMixin, HiddenNodeManagerMixin):
+class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin, FlagManagerMixin, HiddenNodeManagerMixin):
 
     def __init__(self, name: str, **kwargs):
         super().__init__(name=name, **kwargs)
-        self._nodes: dict[str, Node] = {}
+        self._visible_nodes: dict[str, VisibleNode] = {}
         self._collections: dict[str, CliCollection] = {}
         self._actions: SmartList[Callable] = SmartList()
         self._action_results: list = []
@@ -376,7 +390,7 @@ class Node(INamable, IResetable, ParameterManagerMixin, FlagManagerMixin, Hidden
 
     def get_resetable(self) -> set[IResetable]:
         resetable = set()
-        for collection in [self._nodes, self._hidden_nodes, self.get_all_flags(), self.get_all_params(), self._collections]:
+        for collection in [self._visible_nodes, self._hidden_nodes, self.get_flags(), self.get_params(), self._collections]:
             collection = collection.values()
             resetable |= set(resetable for elem in collection for resetable in elem._get_resetable())
         return resetable
@@ -406,33 +420,44 @@ class Node(INamable, IResetable, ParameterManagerMixin, FlagManagerMixin, Hidden
             return False
 
     def _get_getters_of_all_storages(self) -> Iterable[Callable[[str], stored_type]]:
-        return [self.get_node, self.get_hidden_node, self.get_flag, self.get_param, self.get_collection]
+        return [self.get_node, self.get_hidden_node, self.get_param, self.get_collection, self.get_flag]
 
     # Nodes
+    def get_node(self, name: str) -> Node:
+        return next((nodes[name] for nodes in [self._visible_nodes, self._hidden_nodes] if name in nodes))
 
-    def add_node(self, to_add: str | Node, action: Callable = None) -> Node:
-        name, node = get_name_and_object_for_namable(to_add, Node)
-        if name in self._nodes:
+    def has_node(self, node: str | Node):
+        return self.has_visible_node(node) or self.has_hidden_node(node)
+
+    # Visible Nodes
+    def add_node(self, to_add: str | VisibleNode, action: Callable = None) -> VisibleNode:
+        name, node = get_name_and_object_for_namable(to_add, VisibleNode)
+        if name in self._visible_nodes:
             raise ValueError
         node.add_action(action)
-        self._nodes[name] = node
+        self._visible_nodes[name] = node
         return node
 
-    def get_node(self, name: str) -> Node:
-        return next((nodes[name] for nodes in [self._nodes, self._hidden_nodes] if name in nodes))
-
-    def has_node(self, node: str | Node) -> bool:
+    def has_visible_node(self, node: str | VisibleNode) -> bool:
         name = get_name(node)
-        return name in self._nodes
+        return name in self._visible_nodes
 
-    def get_nodes(self) -> list[Node]:
-        return list(self._nodes.values())
+    def get_visible_node(self, node: str | VisibleNode):
+        name = get_name(node)
+        return self._visible_nodes[name]
+
+    def get_visible_nodes(self) -> list[Node]:
+        return list(self._visible_nodes.values())
 
     def get_all_nodes(self) -> list[Node]:
-        return self.get_nodes() + self.get_hidden_nodes()
+        return self.get_visible_nodes() + self.get_hidden_nodes()
 
+    # Only Hiddens
     def set_only_hidden_nodes(self) -> None:
         self._only_hidden = True
+
+    def is_hidden_nodes_only(self):
+        return self._only_hidden
 
     # Collections
 
@@ -466,27 +491,28 @@ class Node(INamable, IResetable, ParameterManagerMixin, FlagManagerMixin, Hidden
         return next(iter(self._action_results), None)
 
 
+class VisibleNode(Node, ImplicitActionActivation):
+
+    def __init__(self, name: str, **kwargs):
+        super().__init__(name=name, activated=False, **kwargs)
+
+
 class HiddenNode(Node, ConditionalActionActivation):  # TODO: refactor to remove duplications (active and inactive conditions should be a separate class
 
-    def __init__(self, name: str, active_condition: compositeActive = None, inactive_condition: compositeActive = None):
-        super().__init__(name=name, active_condition=active_condition, inactive_condition=inactive_condition)
-        # TODO:
-        # super(Node, self).__init__(name=name)
-        # super(ConditionallyActiveMixin, self).__init__(active_condition=active_condition, inactive_condition=inactive_condition)
+    def __init__(self, name: str, active_condition: compositeActive = None, inactive_condition: compositeActive = None, **kwargs):
+        super().__init__(name=name, active_condition=active_condition, inactive_condition=inactive_condition, **kwargs)
 
 
-class Root(Node):
+class Root(VisibleNode):
 
-    def __init__(self, name: str = 'root'):
-        super().__init__(name=name)
+    def __init__(self, name: str = 'root', **kwargs):
+        super().__init__(name=name, **kwargs)
 
 
 class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
 
-    def __init__(self, limit: int = None, *, default=None, name=''):
-        INamable.__init__(self, name)
-        SmartList.__init__(self, limit=limit)
-        DefaultStorage.__init__(self, default)
+    def __init__(self, limit: int = None, *, default=None, name='', **kwargs):
+        super().__init__(name=name, limit=limit, default=default, **kwargs)
 
     def reset(self):
         self.clear()
@@ -494,7 +520,7 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
     def _get_resetable(self) -> set[IResetable]:
         return set()
 
-    def add_to_add_names(self, *active_elems: ImplicitActionActivation):
+    def  add_to_add_names(self, *active_elems: ActionOnActivationMixin):
         for active_elem in active_elems:
             active_elem.when_active_add_name_to(self)
 
@@ -502,18 +528,21 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
         to_get = self.copy() if self else super().get()
         return to_get[0] if isinstance(to_get, list) and len(to_get) == 1 else to_get
 
+    def pop(self, n=0):
+        to_return = self.get()
+        return to_return[n] if isinstance(to_return, list) else to_return
+
     def __contains__(self, item):
         if isinstance(item, Flag):
             return any(name in self for name in item.get_all_names())
         return super().__contains__(item)
 
 
-class FinalNode(IDefaultStorable, INamable, IResetable, ImplicitActionActivation, ABC):
+class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
 
-    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit=None, default=None, local_limit=None, activated=False):
+    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit=None, default=None, local_limit=None, **kwargs):
         IDefaultStorable.__init__(self)
         INamable.__init__(self, name)
-        ImplicitActionActivation.__init__(self, activated)
         self._limit = local_limit
         self._storage = None
         if storage is not None and any(arg is not None for arg in (storage_limit, default)):
@@ -594,21 +623,17 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ImplicitActionActivation
 default_type = str | int | list[str | int] | None
 
 
-class Parameter(FinalNode):
+class Parameter(FinalNode, ConditionalActionActivation):
 
     def __init__(self, name: str, *, storage: CliCollection = None, storage_limit: int | None = 1, default: default_type = None, parameter_limit=1):
-        super().__init__(name, storage=storage, storage_limit=storage_limit, default=default, local_limit=parameter_limit)
-        self.set_activated(True)
+        super().__init__(name, storage=storage, storage_limit=storage_limit, default=default, local_limit=parameter_limit, default_state=True)
 
     def add_to(self, *nodes: Node):
         for node in nodes:
             node.add_param(self)
 
-    def reset(self):
-        self.activate()
 
-
-class Flag(FinalNode):
+class Flag(FinalNode, ImplicitActionActivation):
 
     def __init__(self, name, *alternative_names: str, storage: CliCollection = None, storage_limit: int = 0, default: default_type = None, local_limit=None):
         super().__init__(name, storage=storage, storage_limit=storage_limit, default=default, local_limit=local_limit, activated=False)
@@ -628,7 +653,7 @@ class Flag(FinalNode):
         return [self._name] + list(self._alternative_names)
 
 
-stored_type = Node | Flag | Parameter | HiddenNode | CliCollection
+stored_type = Node | Flag | Parameter | HiddenNode | VisibleNode | CliCollection
 
 
 def get_name_and_object_for_namable(arg: str | INamable, type: Type) -> tuple[str, stored_type | INamable]:

@@ -5,8 +5,8 @@ from collections.abc import Iterable
 
 class SmartList(list):
 
-    def __init__(self, *to_list, limit: int = None):
-        super().__init__()
+    def __init__(self, *to_list, limit: int = None, **kwargs):
+        super().__init__(**kwargs)
         self._limit = limit
         if to_list:
             self.extend(to_list)
