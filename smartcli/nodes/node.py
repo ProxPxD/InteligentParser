@@ -6,7 +6,7 @@ from itertools import islice, zip_longest
 from typing import Iterator, Callable, Iterable, Any, TypeVar, Type
 
 from smartcli.exceptions import ParsingException
-from smartcli.nodes.interfaces import INamable, IResetable, compositeActive, active, bool_func
+from smartcli.nodes.interfaces import INamable, IResetable, compositeActive, active, bool_from_iterable, bool_from_void, any_from_void
 from smartcli.nodes.smartList import SmartList
 from smartcli.nodes.storages import IActivable, DefaultStorage, IDefaultStorable
 
@@ -52,11 +52,11 @@ class ConditionallyActiveMixin(IActivable):
             raise ValueError
         return self._default
 
-    def set_active_on_conditions(self, *conditions: compositeActive, func: bool_func = all):
+    def set_active_on_conditions(self, *conditions: compositeActive, func: bool_from_iterable = all):
         if conditions and conditions[0]:
             self._active_conditions += IActivable._map_to_single(*conditions, func=func)
 
-    def set_inactive_on_conditions(self, *conditions: compositeActive, func: bool_func = all):
+    def set_inactive_on_conditions(self, *conditions: compositeActive, func: bool_from_iterable = all):
         if conditions and conditions[0]:
             self._inactive_conditions += IActivable._map_to_single(*conditions, func=func)
 
@@ -377,9 +377,9 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
 
     def __init__(self, name: str, **kwargs):
         super().__init__(name=name, **kwargs)
-        self._visible_nodes: dict[str, VisibleNode] = {}
-        self._collections: dict[str, CliCollection] = {}
-        self._actions: SmartList[Callable] = SmartList()
+        self._visible_nodes: dict[str, VisibleNode] = dict()
+        self._collections: dict[str, CliCollection] = dict()
+        self._actions: dict[bool_from_void, SmartList[any_from_void]] = dict()
         self._action_results: list = []
         self._only_hidden = False
 
@@ -473,11 +473,28 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
 
     # Actions
 
-    def add_action(self, action: Callable) -> None:
-        self._actions += action
+    def add_action_when_param_has_value(self, action: any_from_void, params: Parameter | str | list[Parameter | str], values: str | list[str]):
+        params, values = list(params), list(values)
+        if len(params) != len(values):
+            raise ParsingException
+
+        for param, value in zip(params, values):
+            param = self.get_param(param) if isinstance(param, str) else param
+            when = lambda: param.get() == value
+            self.add_action(action=action, when=when)
+
+    def add_action(self, action: any_from_void, when: bool_from_void = None) -> None:
+        when = when or (lambda: True)
+        self._actions.setdefault(when, SmartList())
+        self._actions[when] += action
 
     def perform_all_actions(self) -> None:
-        for action in self._actions:
+        for condition, actions in reversed(self._actions.items()):
+            if condition():
+                self._perform_actions(actions)
+
+    def _perform_actions(self, actions: Iterable[Callable]):
+        for action in actions:
             arity = len(signature(action).parameters)
             params = (param.get() for param in self._params.values())
             args = list(islice(params, arity))
@@ -524,9 +541,15 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
         for active_elem in active_elems:
             active_elem.when_active_add_name_to(self)
 
-    def get(self):
+    def get(self) -> Any:
         to_get = self.copy() if self else super().get()
         return to_get[0] if isinstance(to_get, list) and len(to_get) == 1 else to_get
+
+    def get_nth(self, n: int):
+        return self.get()[n]
+
+    def get_first(self):
+        return self.get_nth(0)
 
     def pop(self, n=0):
         to_return = self.get()

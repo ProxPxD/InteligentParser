@@ -9,7 +9,8 @@ from .nodes.node import Node, Root, Parameter, HiddenNode, VisibleNode
 
 class Cli(IResetable):
 
-    def __init__(self, args: list[str] = None, root: Root = None):
+    def __init__(self, args: list[str] = None, root: Root = None, **kwargs):
+        super().__init__(**kwargs)
         self._root: Root = root or Root()
         self._args: list = args or []
         self._active_nodes = []
@@ -27,7 +28,9 @@ class Cli(IResetable):
     def parse_from_str(self, input: str) -> Node:
         return self.parse(shlex.split(input))
 
-    def parse(self, args: list[str] = None) -> Node:
+    def parse(self, args: list[str] | str = None) -> Node:
+        if isinstance(args, str):
+            args = shlex.split(args)
         self.set_args(args)
         self._args = self._root.filter_flags_out(self._args)
 

@@ -37,7 +37,7 @@ class IResetable(abc.ABC):
 class IActivable(abc.ABC):
 
     @staticmethod
-    def _map_to_single(*to_map: compositeActive, func: bool_func = all) -> Callable[[], bool] | None:
+    def _map_to_single(*to_map: compositeActive, func: bool_from_iterable = all) -> bool_from_void | None:
         if not to_map :
             raise ValueError
         if len(to_map) == 1 and isinstance(to_map[0], Callable):
@@ -47,11 +47,11 @@ class IActivable(abc.ABC):
         return IActivable.merge_conditions(to_map, func=func)
 
     @staticmethod
-    def merge_conditions(conditions: tuple[Callable[[], bool], ...], func: Callable[[Iterable], bool]) -> Callable[[], bool]:
+    def merge_conditions(conditions: tuple[bool_from_void, ...], func: bool_from_iterable) -> bool_from_void:
         return lambda: func((IActivable._is_met(condition, func) for condition in conditions))
 
     @staticmethod
-    def _is_met(to_check: compositeActive, func: bool_func) -> bool:
+    def _is_met(to_check: compositeActive, func: bool_from_iterable) -> bool:
         if isinstance(to_check, IActivable):
             return to_check.is_active()
         elif isinstance(to_check, Callable):
@@ -66,8 +66,10 @@ class IActivable(abc.ABC):
         raise NotImplemented
 
 
-bool_func = Callable[[Iterable], bool]
-active = Callable[[], bool] | IActivable
+bool_from_void = Callable[[], bool]
+any_from_void = Callable[[], Any]
+bool_from_iterable = Callable[[Iterable], bool]
+active = bool_from_void | IActivable
 compositeActive = active | Iterable[active]
 
 
@@ -94,15 +96,15 @@ class IDefaultStorable(abc.ABC):
         self.add_get_default_if(get_default, lambda: True)
 
     @abc.abstractmethod
-    def add_get_default_if(self, get_default: Callable[[], Any], condition: Callable[[], bool]):
+    def add_get_default_if(self, get_default: any_from_void, condition: bool_from_void):
         raise NotImplemented
 
     @abc.abstractmethod
-    def add_get_default_if_and(self, get_default: Callable[[], Any], *conditions: Callable[[], bool]):
+    def add_get_default_if_and(self, get_default: any_from_void, *conditions: bool_from_void):
         raise NotImplemented
 
     @abc.abstractmethod
-    def add_get_default_if_or(self, get_default: Callable[[], Any], *conditions: Callable[[], bool]):
+    def add_get_default_if_or(self, get_default: any_from_void, *conditions: bool_from_void):
         raise NotImplemented
 
     @abc.abstractmethod
