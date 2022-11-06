@@ -5,10 +5,6 @@ from tests.abstractTest import AbstractTest
 
 class CategorierTest(AbstractTest):
 
-    @classmethod
-    def _get_test_name(cls) -> str:
-        return CategorierTest.__class__.__name__.removesuffix('Test')
-
     def create_correct_cli(self) -> Cli:
         self.cli = Cli()
         root = self.cli.root

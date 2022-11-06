@@ -46,7 +46,6 @@ class AbstractTest(unittest.TestCase, abc.ABC):
             'WRONG UNIT TEST OUTCOME CHECKING! Investigate (possible incompatible with a python newer than 3.10)')
 
     @classmethod
-    @abc.abstractmethod
     def _get_test_name(cls) -> str:
-        return 'unnamed'
+        return cls.__name__.removesuffix('Test')
 

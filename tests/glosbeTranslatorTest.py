@@ -12,10 +12,6 @@ class GlosbeTranslatorTest(AbstractTest):
     limit: int = 4
     words = []
 
-    @classmethod
-    def _get_test_name(cls) -> str:
-        return 'Basic node'
-
     def get_default_mode(self) -> str:
         return self.default_mode
 

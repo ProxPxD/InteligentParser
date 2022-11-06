@@ -312,7 +312,7 @@ class ParameterManagerMixin:
         rest_of_args = args[len(params_to_use):]
         if not params_to_use and rest_of_args:
             raise ValueError
-        if params_to_use and rest_of_args and params_to_use[-1].get_limit() > 1:
+        if params_to_use and rest_of_args and params_to_use[-1].is_multi_parameter():
             params_to_use[-1].add_to_values(rest_of_args)
 
     def _get_params_to_use(self, order: list[str], needed_defaults: int) -> Iterator[Parameter]:
@@ -619,6 +619,9 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
 
     def get_limit(self) -> int:
         return self._limit
+
+    def is_multi_parameter(self):
+        return self._limit is None or self._limit > 0
 
     def set_lower_limit(self, limit: int | None):
         self._lower_limit = limit or 0
