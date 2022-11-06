@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC
 from inspect import signature
 from itertools import islice, zip_longest
-from typing import Iterator, Callable, Iterable, Any, TypeVar, Type
+from typing import Iterator, Callable, Iterable, Any, TypeVar, Type, Sized
 
 from smartcli.exceptions import ParsingException
 from smartcli.nodes.interfaces import INamable, IResetable, compositeActive, active, bool_from_iterable, bool_from_void, any_from_void
@@ -182,7 +182,7 @@ class FlagManagerMixin:
         if self.has_flag(name):  # TODO: check alternative names
             raise ValueError
         flag.add_alternative_names(*alternative_names)
-        flag.set_storage(storage if storage else CliCollection(storage_limit, default=default))
+        flag.set_storage(storage if storage is not None else CliCollection(storage_limit, default=default))
         flag.set_limit(flag_limit)
         self._flags.append(flag)
         return flag
@@ -258,7 +258,7 @@ class ParameterManagerMixin:
         self._orders[count] = params
 
     def get_optional_params(self) -> Iterator[Parameter]:
-        return (param for param in self._params.values() if param.is_default_set() or not param.is_active())
+        return (param for param in self._params.values() if param.is_default_set() or not param.is_active() or not param.has_lower_limit())
 
     def _get_optional_params_count(self):
         return len(list(self.get_optional_params()))
@@ -312,7 +312,7 @@ class ParameterManagerMixin:
         rest_of_args = args[len(params_to_use):]
         if not params_to_use and rest_of_args:
             raise ValueError
-        if params_to_use and rest_of_args:
+        if params_to_use and rest_of_args and params_to_use[-1].get_limit() > 1:
             params_to_use[-1].add_to_values(rest_of_args)
 
     def _get_params_to_use(self, order: list[str], needed_defaults: int) -> Iterator[Parameter]:
@@ -400,13 +400,25 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
     def __getitem__(self, name: str):
         return self.get(name)
 
-    def get(self, name: str) -> Any:
-        for method in self._get_getters_of_all_storages():
+    def get(self, name: str) -> stored_type:
+        return self._get(name, self._get_storages_getters())
+
+    def get_storable(self, name: str) -> IDefaultStorable:
+        return self._get(name, self._get_storables_getters())
+
+    def _get(self, name: str, storages: Iterable) -> stored_type:
+        for method in storages:
             try:
                 return method(name)
             except Exception:
                 pass
         raise LookupError
+
+    def _get_storages_getters(self) -> Iterable[Callable[[str], stored_type]]:
+        return [self.get_node, self.get_hidden_node] + self._get_storables_getters()
+
+    def _get_storables_getters(self) -> Iterator[Callable[[str], IDefaultStorable]]:
+        return [self.get_param, self.get_flag, self.get_collection]
     
     def __contains__(self, node: str | INamable):
         return self.has(node)
@@ -418,9 +430,6 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
             return result is not None
         except LookupError:
             return False
-
-    def _get_getters_of_all_storages(self) -> Iterable[Callable[[str], stored_type]]:
-        return [self.get_node, self.get_hidden_node, self.get_param, self.get_collection, self.get_flag]
 
     # Nodes
     def get_node(self, name: str) -> Node:
@@ -473,14 +482,15 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
 
     # Actions
 
-    def add_action_when_param_has_value(self, action: any_from_void, params: Parameter | str | list[Parameter | str], values: str | list[str]):
-        params, values = list(params), list(values)
-        if len(params) != len(values):
+    def add_action_when_storable_has_value(self, action: any_from_void, storables: IDefaultStorable | str | list[IDefaultStorable | str], values: str | list[str]):
+        storables = [storables] if isinstance(storables, (IDefaultStorable, str)) else storables
+        values = [values] if isinstance(values, str) else values
+        if len(storables) != len(values):
             raise ParsingException
 
-        for param, value in zip(params, values):
-            param = self.get_param(param) if isinstance(param, str) else param
-            when = lambda: param.get() == value
+        for storable, value in zip(storables, values):
+            storable = self.get_storable(storable) if isinstance(storable, str) else storable
+            when = lambda: storable_has_value(storable, value)
             self.add_action(action=action, when=when)
 
     def add_action(self, action: any_from_void, when: bool_from_void = None) -> None:
@@ -528,8 +538,10 @@ class Root(VisibleNode):
 
 class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
 
-    def __init__(self, limit: int = None, *, default=None, name='', **kwargs):
-        super().__init__(name=name, limit=limit, default=default, **kwargs)
+    def __init__(self, upper_limit: int = None, *, lower_limit=0, default=None, name='', **kwargs):
+        super().__init__(name=name, limit=upper_limit, default=default, **kwargs)
+        self._lower_limit = None
+        self.set_lower_limit(lower_limit)
 
     def reset(self):
         self.clear()
@@ -537,19 +549,39 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
     def _get_resetable(self) -> set[IResetable]:
         return set()
 
-    def  add_to_add_names(self, *active_elems: ActionOnActivationMixin):
+    def add_to_add_names(self, *active_elems: ActionOnActivationMixin):
         for active_elem in active_elems:
             active_elem.when_active_add_name_to(self)
 
+    def set_lower_limit(self, limit: int | None):
+        self._lower_limit = limit or 0
+
+    def get_lower_limit(self) -> int:
+        return self._lower_limit
+
     def get(self) -> Any:
-        to_get = self.copy() if self else super().get()
-        return to_get[0] if isinstance(to_get, list) and len(to_get) == 1 else to_get
+        '''
+        :return: As get plain but if the collection has length of 1 gets the only element of it
+        '''
+        to_return = self.get_plain()
+        if isinstance(to_return, Sized) and isinstance(to_return, Iterable) and len(to_return) == 1:
+            to_return = next(iter(to_return))
+        return to_return
+
+    def get_plain(self) -> Any:  # TODO: rethink the name
+        '''
+        :return: Return truncated to the limit values of the collection or if there are no values, returns the default values
+        '''
+        to_return = self.copy() if self else super().get()
+        if isinstance(to_return, Sized) and len(to_return) < self._lower_limit:
+            raise ValueError
+        return to_return
 
     def get_nth(self, n: int):
         return self.get()[n]
 
-    def get_first(self):
-        return self.get_nth(0)
+    def has(self, elem: any):
+        return elem in self
 
     def pop(self, n=0):
         to_return = self.get()
@@ -563,16 +595,14 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
 
 class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
 
-    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit=None, default=None, local_limit=None, **kwargs):
-        IDefaultStorable.__init__(self)
-        INamable.__init__(self, name)
+    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit=None, storage_lower_limit=None, default=None, local_limit=None, local_lower_limit=None, **kwargs):
+        super().__init__(name=name, **kwargs)
         self._limit = local_limit
-        self._storage = None
-        if storage is not None and any(arg is not None for arg in (storage_limit, default)):
-            raise ValueError
+        self._lower_limit = None
+        self.set_lower_limit(local_lower_limit)
 
         if storage is None:
-            storage = CliCollection(limit=storage_limit, default=default)
+            storage = CliCollection(upper_limit=storage_limit, lower_limit=storage_lower_limit, default=default)
 
         self._storage = storage
 
@@ -589,6 +619,15 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
 
     def get_limit(self) -> int:
         return self._limit
+
+    def set_lower_limit(self, limit: int | None):
+        self._lower_limit = limit or 0
+
+    def get_lower_limit(self) -> int:
+        return self._lower_limit
+
+    def has_lower_limit(self):
+        return any((self._lower_limit, self._storage.get_lower_limit()))
 
     def set_storage_limit(self, limit: int | None, *, storage: CliCollection = None) -> None:
         if storage:
@@ -635,12 +674,25 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
         return self._storage.is_default_set()
 
     def get(self) -> Any:
-        to_return = self._storage.get()
-        if isinstance(to_return, list) and self._limit is not None and self._limit < len(to_return):
-            to_return = to_return[:self._limit]
-        if len(to_return) == 1:
-            to_return = to_return[0]
-        return to_return if to_return else None
+        '''
+        :return: As get plain but if the collection has length of 1 gets the only element of it
+        '''
+        to_return = self._storage.get_plain()
+        if isinstance(to_return, Sized) and isinstance(to_return, Iterable) and len(to_return) == 1:
+            to_return = next(iter(to_return))
+        return to_return
+
+    def get_plain(self):
+        '''
+        :return: Return truncated to the limit values of the collection or if there are no values, returns the default values
+        '''
+        to_return = self._storage.get_plain()
+        if isinstance(to_return, Sized):
+            if self._limit is not None and self._limit < len(to_return):
+                to_return = to_return[:self._limit]
+            if len(to_return) < self._lower_limit:
+                raise ValueError
+        return to_return
 
 
 default_type = str | int | list[str | int] | None
@@ -648,8 +700,8 @@ default_type = str | int | list[str | int] | None
 
 class Parameter(FinalNode, ConditionalActionActivation):
 
-    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit: int | None = 1, default: default_type = None, parameter_limit=1):
-        super().__init__(name, storage=storage, storage_limit=storage_limit, default=default, local_limit=parameter_limit, default_state=True)
+    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit: int | None = 1, storage_lower_limit: int | None = 0, default: default_type = None, parameter_limit=1, parameter_lower_limit=1):
+        super().__init__(name, storage=storage, storage_limit=storage_limit, storage_lower_limit=storage_lower_limit, default=default, local_limit=parameter_limit, local_lower_limit=parameter_lower_limit, default_state=True)
 
     def add_to(self, *nodes: Node):
         for node in nodes:
@@ -658,8 +710,8 @@ class Parameter(FinalNode, ConditionalActionActivation):
 
 class Flag(FinalNode, ImplicitActionActivation):
 
-    def __init__(self, name, *alternative_names: str, storage: CliCollection = None, storage_limit: int = 0, default: default_type = None, local_limit=None):
-        super().__init__(name, storage=storage, storage_limit=storage_limit, default=default, local_limit=local_limit, activated=False)
+    def __init__(self, name, *alternative_names: str, storage: CliCollection = None, storage_limit: int = 0, storage_lower_limit=0, default: default_type = None, flag_limit=None, flag_lower_limit=0):
+        super().__init__(name, storage=storage, storage_limit=storage_limit, storage_lower_limit=storage_lower_limit, default=default, local_limit=flag_limit, local_lower_limit=flag_lower_limit, activated=False)
         self._alternative_names = set(alternative_names)
         self._on_activation: SmartList[Callable] = SmartList()
 
@@ -688,3 +740,8 @@ def get_name_and_object_for_namable(arg: str | INamable, type: Type) -> tuple[st
 
 def get_name(arg: str | INamable) -> str:
     return arg if isinstance(arg, str) else arg.name
+
+
+def storable_has_value(storable: IDefaultStorable, value: Any):
+    result = storable.get()
+    return result is not None and (result == value or value in result)

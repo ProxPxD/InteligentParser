@@ -39,7 +39,7 @@ class DefaultStorage(IDefaultStorable):
         return len(self._get_defaults) > 0
 
     def get(self) -> Any:
-        return next((get_default() for condition, get_default in self._get_defaults.items() if condition()), None)
+        return next((get_default() for condition, get_default in reversed(self._get_defaults.items()) if condition()), None)
 
     def __contains__(self, item):
         if not isinstance(item, (int, float, str, list, dict, set)) and 'name' in item.__dict__:

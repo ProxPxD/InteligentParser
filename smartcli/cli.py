@@ -53,7 +53,7 @@ class Cli(IResetable):
         return nodes + hidden_nodes
 
     def _get_active_argument_nodes(self) -> Iterator[VisibleNode]:
-        i, curr_node = 0, self._root
+        i, curr_node = 1, self._root
         yield self._root
         while self._args and curr_node.has_visible_node(self._args[i]):
             curr_node = curr_node.get_visible_node(self._args[i])
@@ -78,6 +78,7 @@ class ParsingResult:  # TODO: implement default values/methods (like name, etc.)
 
     def __init__(self, node: Node):
         setattr(self, 'node', node)
+        setattr(self, 'result', node.get_result())
         for param in node.get_params():
             setattr(self, f'get_{param.name}', ParsingResult.make_getter(param))
 

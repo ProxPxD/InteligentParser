@@ -1,9 +1,11 @@
 import unittest
 
+from tests.categorierTest import CategorierTest
 from tests.glosbeTranslatorTest import GlosbeTranslatorTest
 
 tests = [
-    GlosbeTranslatorTest
+    GlosbeTranslatorTest,
+    CategorierTest,
 ]
 
 
