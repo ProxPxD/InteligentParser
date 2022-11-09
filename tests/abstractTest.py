@@ -1,5 +1,6 @@
 import abc
 import unittest
+from itertools import count, takewhile
 
 from smartcli.cli import Cli
 from smartcli.nodes.node import Root
@@ -49,3 +50,12 @@ class AbstractTest(unittest.TestCase, abc.ABC):
     def _get_test_name(cls) -> str:
         return cls.__name__.removesuffix('Test')
 
+    def run_current_test_with_params(self, *param_num):
+        all_names = dir(self)
+        method_name = self.get_method_name()
+        numbered_names = (f'{method_name}_{i}' for i in count() if not param_num or i in param_num)
+        limited_names = takewhile(lambda name: any(actual.startswith(name) for actual in all_names), numbered_names)
+        methods = (getattr(self, actual_name) for expected_prefix in limited_names for actual_name in all_names if actual_name.startswith(expected_prefix))
+
+        for method in methods:
+            method()
