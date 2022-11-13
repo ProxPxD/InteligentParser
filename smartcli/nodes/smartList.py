@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from itertools import islice
 
 
 class SmartList(list):
@@ -15,7 +16,7 @@ class SmartList(list):
         elems = [elems] if not isinstance(elems, Iterable) or isinstance(elems, str) else elems
         elems = self._remove_nones(elems)
         elems = self._cut_over_limit(elems)
-        super().extend(elems)
+        super().extend(list(elems))
         return self
 
     def filter_out(self, elems) -> list:
@@ -31,10 +32,10 @@ class SmartList(list):
             self[:] = self[:limit]
 
     def _remove_nones(self, to_filter: Iterable):
-        return [elem for elem in to_filter if elem is not None]
+        return (elem for elem in to_filter if elem is not None)
 
     def _cut_over_limit(self, to_cut: Iterable):
-        return to_cut[:self._get_free_space()] if self._is_limited() else to_cut
+        return islice(to_cut, self._get_free_space()) if self._is_limited() else to_cut
 
     def __add__(self, x) -> SmartList:
         self.extend(x)

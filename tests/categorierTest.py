@@ -24,12 +24,7 @@ class CategorierTest(AbstractTest):
 
         operand_param.set_inactive_on_flags(of)
 
-        add_node = root.add_node("add")
-        del_node = root.add_node("del")
-        show_node = root.add_node("show")
-        search_node = root.add_node("search")
-        rename_node = root.add_node("rename")
-
+        add_node, del_node, show_node, search_node, rename_node = root.add_nodes('add', 'del', 'show', 'search', 'rename')
         operations.add_to_add_names(add_node, del_node, show_node, search_node, rename_node)
         
         # Examples:

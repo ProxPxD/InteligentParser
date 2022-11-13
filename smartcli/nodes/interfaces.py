@@ -68,6 +68,7 @@ class IActivable(abc.ABC):
 
 bool_from_void = Callable[[], bool]
 any_from_void = Callable[[], Any]
+any_from_str = Callable[[str], Any]
 bool_from_iterable = Callable[[Iterable], bool]
 active = bool_from_void | IActivable
 compositeActive = active | Iterable[active]
@@ -88,9 +89,8 @@ class IDefaultStorable(abc.ABC):
         raise NotImplemented
 
     def set_default(self, default: Any) -> None:
-        if not isinstance(default, Callable):
-            default = lambda: default
-        self.set_get_default(default)
+        get_default = lambda: default if not isinstance(default, Callable) else default
+        self.set_get_default(get_default)
 
     def set_get_default(self, get_default: Callable) -> None:
         self.add_get_default_if(get_default, lambda: True)

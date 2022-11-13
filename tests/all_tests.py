@@ -2,10 +2,12 @@ import unittest
 
 from tests.categorierTest import CategorierTest
 from tests.glosbeTranslatorTest import GlosbeTranslatorTest
+from tests.selectingParametersMethodsTest import SelectingParametersMethodsTest
 
 tests = [
     GlosbeTranslatorTest,
     CategorierTest,
+    SelectingParametersMethodsTest,
 ]
 
 

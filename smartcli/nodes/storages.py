@@ -12,7 +12,9 @@ class DefaultStorage(IDefaultStorable):
         self._type: Callable | None = None
         self._get_defaults = {lambda: True: lambda: default} if default is not None else {}
 
-    def set_type(self, type: Callable | None) -> None:  # TODO: verify if there's a better hinting type
+    # TODO: add separate type to FinalNode
+    # TODO: verify if there's a better hinting type
+    def set_type(self, type: Callable | None) -> None:
         '''
         Takes a class to witch argument should be mapped
         Takes None if there shouldn't be any type control (default)
@@ -39,7 +41,8 @@ class DefaultStorage(IDefaultStorable):
         return len(self._get_defaults) > 0
 
     def get(self) -> Any:
-        return next((get_default() for condition, get_default in reversed(self._get_defaults.items()) if condition()), None)
+        to_return = next((get_default() for condition, get_default in reversed(self._get_defaults.items()) if condition()), None)
+        return to_return
 
     def __contains__(self, item):
         if not isinstance(item, (int, float, str, list, dict, set)) and 'name' in item.__dict__:

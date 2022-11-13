@@ -1,6 +1,5 @@
 import abc
 import unittest
-from itertools import count, takewhile
 
 from smartcli.cli import Cli
 from smartcli.nodes.node import Root
@@ -16,7 +15,7 @@ class AbstractTest(unittest.TestCase, abc.ABC):
     def print_sep_with_text(cls, text: str, sep: str = '*') -> None:
         with_sep_lines = sep * cls.half_sep_length + f' {text} ' + sep * cls.half_sep_length
         over_length = len(with_sep_lines) - cls.half_sep_length*2
-        to_print = with_sep_lines[over_length//2 : -over_length//2]
+        to_print = with_sep_lines[over_length//2: -over_length//2]
         print(to_print)
 
     @classmethod
@@ -50,12 +49,18 @@ class AbstractTest(unittest.TestCase, abc.ABC):
     def _get_test_name(cls) -> str:
         return cls.__name__.removesuffix('Test')
 
-    def run_current_test_with_params(self, *param_num):
-        all_names = dir(self)
-        method_name = self.get_method_name()
-        numbered_names = (f'{method_name}_{i}' for i in count() if not param_num or i in param_num)
-        limited_names = takewhile(lambda name: any(actual.startswith(name) for actual in all_names), numbered_names)
-        methods = (getattr(self, actual_name) for expected_prefix in limited_names for actual_name in all_names if actual_name.startswith(expected_prefix))
+    def run_current_test_with_params(self, *method_nums):
+        if not method_nums:
+            return
+
+        method_prefix = self.get_method_name() + '_'
+        child_methods = [name for name in dir(self) if name.startswith(method_prefix)]
+        
+        if method_nums[0] is None:
+            method_nums = range(len(child_methods))
+        
+        method_prefixes = (f'{method_prefix}{i}' for i in method_nums)
+        methods = (getattr(self, actual_name) for expected_prefix in method_prefixes for actual_name in child_methods if actual_name.startswith(expected_prefix))
 
         for method in methods:
             method()

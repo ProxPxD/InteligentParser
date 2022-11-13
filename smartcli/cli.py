@@ -42,7 +42,9 @@ class Cli(IResetable):
         self._action_node.parse_node_args(node_args)
         self._action_node.perform_all_actions()
 
-        return ParsingResult(self._action_node)  # TODO: finish parsing result
+        to_return = ParsingResult(self._action_node)  # TODO: finish parsing result
+        self.reset()
+        return to_return
 
     def _get_active_nodes(self) -> list[Node]:
         nodes = list(self._get_active_argument_nodes())

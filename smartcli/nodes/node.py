@@ -6,7 +6,7 @@ from itertools import islice, zip_longest
 from typing import Iterator, Callable, Iterable, Any, TypeVar, Type, Sized
 
 from smartcli.exceptions import ParsingException
-from smartcli.nodes.interfaces import INamable, IResetable, compositeActive, active, bool_from_iterable, bool_from_void, any_from_void
+from smartcli.nodes.interfaces import INamable, IResetable, compositeActive, active, bool_from_iterable, bool_from_void, any_from_void, any_from_str
 from smartcli.nodes.smartList import SmartList
 from smartcli.nodes.storages import IActivable, DefaultStorage, IDefaultStorable
 
@@ -174,8 +174,11 @@ class FlagManagerMixin:
     def get_flag(self, name: str):
         return next((flag for flag in self._flags if flag.has_name(name)))
 
-    def get_flags(self) -> list[Flag]:
-        return self._flags
+    def get_flags(self, *flag_names: str) -> list[Flag]:
+        if not flag_names:
+            return self._flags
+        else:
+            return [flag for flag in self._flags if any(name in flag_names for name in flag.get_all_names())]
 
     def add_flag(self, main: str | Flag, *alternative_names: str, storage: CliCollection = None, storage_limit=0, flag_limit=None, default=None) -> Flag:
         name, flag = get_name_and_object_for_namable(main, Flag)
@@ -227,12 +230,20 @@ class ParameterManagerMixin:
     def get_param(self, name: str):
         return self._params[name]
 
-    def get_params(self) -> list[Parameter]:
-        return list(self._params.values())
+    def get_params(self, *param_names: str) -> list[Parameter]:
+        if not param_names:
+            return list(self._params.values())
+        else:
+            return [self.get_param(name) for name in param_names]
 
     def set_params(self, *parameters: str | CliCollection | Parameter, storages: tuple[CliCollection, ...] = ()) -> None:
         for param, storage in zip_longest(parameters, storages):
             self.add_param(param, storage)
+
+    def _set_lacking_params(self, *params: str):
+        for param in params:
+            if param not in self._params:
+                self.add_param(param)
 
     def add_param(self, to_add: str | Parameter | CliCollection, storage: CliCollection = None) -> Parameter:
         if storage is not None and isinstance(to_add, CliCollection):
@@ -252,6 +263,7 @@ class ParameterManagerMixin:
 
     def set_params_order(self, line: str) -> None:
         params = line.split(' ') if len(line) else []
+        self._set_lacking_params(*params)
         count = len(params)
         if count in self._orders:
             raise ValueError
@@ -329,6 +341,24 @@ class ParameterManagerMixin:
     def _parse_list_args_by_order(self, args: list[str], order: list[str]) -> None:
         self.get_param(order[-1]).add_to_values(args)
 
+    def _param_from(self, param: Parameter | str):
+        return self.get_param(param) if isinstance(param, str) else param
+
+    def set_default_to_params(self, default: Any, *params: Parameter | str):
+        for param in params:
+            param = self._param_from(param)
+            param.set_default(default)
+
+    def set_get_default_to_params_by_its_names(self, get_default: any_from_str, *params: Parameter | str):
+        for param in params:
+            param = self._param_from(param)
+            param.set_get_default(lambda: get_default(param.name))
+
+    def set_type_to_params(self, type: Callable, *params: Parameter | str):
+        for param in params:
+            param = self._param_from(param)
+            param.set_type(type)
+
 
 class HiddenNodeManagerMixin:
     def __init__(self, **kwargs):
@@ -345,8 +375,11 @@ class HiddenNodeManagerMixin:
     def get_hidden_node(self, name: str) -> HiddenNode:
         return self._hidden_nodes[name]
 
-    def get_hidden_nodes(self):
-        return list(self._hidden_nodes.values())
+    def get_hidden_nodes(self, *names: str) -> list[HiddenNode]:
+        if not names:
+            return list(self._hidden_nodes.values())
+        else:
+            return [self.get_hidden_node(name) for name in names]
 
     def _get_active_hidden_nodes(self) -> Iterator[HiddenNode]:
         return (node for node in self._hidden_nodes.values() if node.is_active())
@@ -386,12 +419,13 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
     # Resetable
 
     def reset(self) -> None:
-        pass
+        self._action_results = []
 
     def get_resetable(self) -> set[IResetable]:
-        resetable = set()
-        for collection in [self._visible_nodes, self._hidden_nodes, self.get_flags(), self.get_params(), self._collections]:
-            collection = collection.values()
+        resetable = {self}
+        for getter in [self.get_visible_nodes, self.get_hidden_nodes, self.get_flags, self.get_params, self.get_collections]:
+            collection = getter()
+            resetable |= set(collection)
             resetable |= set(resetable for elem in collection for resetable in elem._get_resetable())
         return resetable
 
@@ -439,6 +473,11 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
         return self.has_visible_node(node) or self.has_hidden_node(node)
 
     # Visible Nodes
+    def add_nodes(self, *to_adds: str | VisibleNode, actions: Iterable[Callable] = None):
+        actions = actions or []
+        nodes = (self.add_node(to_add, action) for to_add, action in zip_longest(to_adds, actions))
+        return tuple(nodes)
+
     def add_node(self, to_add: str | VisibleNode, action: Callable = None) -> VisibleNode:
         name, node = get_name_and_object_for_namable(to_add, VisibleNode)
         if name in self._visible_nodes:
@@ -451,12 +490,14 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
         name = get_name(node)
         return name in self._visible_nodes
 
-    def get_visible_node(self, node: str | VisibleNode):
-        name = get_name(node)
+    def get_visible_node(self, name: str):
         return self._visible_nodes[name]
 
-    def get_visible_nodes(self) -> list[Node]:
-        return list(self._visible_nodes.values())
+    def get_visible_nodes(self, *names: str) -> list[Node]:
+        if not names:
+            return list(self._visible_nodes.values())
+        else:
+            return [self.get_visible_node(name) for name in names]
 
     def get_all_nodes(self) -> list[Node]:
         return self.get_visible_nodes() + self.get_hidden_nodes()
@@ -477,8 +518,10 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
     def get_collection(self, name: str) -> CliCollection:
         return self._collections[name]
 
-    def get_collections(self) -> list[CliCollection]:
-        return list(self._collections.values())
+    def get_collections(self, *names: str) -> list[CliCollection]:
+        if not names:
+            return list(self._collections.values())
+        return [self.get_collection(name) for name in names]
 
     # Actions
 
@@ -592,6 +635,9 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
             return any(name in self for name in item.get_all_names())
         return super().__contains__(item)
 
+    def __hash__(self):
+        return hash(tuple(self))
+
 
 class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
 
@@ -600,9 +646,11 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
         self._limit = local_limit
         self._lower_limit = None
         self.set_lower_limit(local_lower_limit)
+        self._has_own_storage = False
 
         if storage is None:
             storage = CliCollection(upper_limit=storage_limit, lower_limit=storage_lower_limit, default=default)
+            self._has_own_storage = True
 
         self._storage = storage
 
@@ -610,12 +658,14 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
         pass
 
     def _get_resetable(self) -> set[IResetable]:
-        return set(self._storage)
+        return {self._storage}
 
     def set_limit(self, limit: int | None, *, storage: CliCollection = None) -> None:
         if storage is not None:
             self.set_storage(storage)
         self._limit = limit
+        if self._has_own_storage:
+            self._storage.set_limit(limit)
 
     def get_limit(self) -> int:
         return self._limit
@@ -646,8 +696,14 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
     def add_to_values(self, to_add) -> list[str]:
         if isinstance(to_add, str) or not isinstance(to_add, Iterable):
             to_add = [to_add]
-        rest = self._storage.filter_out(to_add)
+        casted = self._map_to_type(to_add)
+        rest = self._storage.filter_out(casted)
         return rest
+
+    def _map_to_type(self, to_cast: Iterable):
+        if not self.type:
+            return to_cast
+        return (self.type(elem) for elem in to_cast if elem)
 
     def set_storage(self, storage: CliCollection):
         self._storage = storage
@@ -660,6 +716,10 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
 
     def get_type(self) -> Callable:
         return self._storage.get_type()
+
+    @property
+    def type(self):
+        return self.get_type()
 
     def set_get_default(self, get_default: Callable) -> None:
         self._storage.set_get_default(get_default)
