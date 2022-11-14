@@ -583,8 +583,8 @@ class Root(VisibleNode):
 
 class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
 
-    def __init__(self, upper_limit: int = None, *, lower_limit=0, default=None, name='', **kwargs):
-        super().__init__(name=name, limit=upper_limit, default=default, **kwargs)
+    def __init__(self, upper_limit: int = None, *, lower_limit=0, default=None, name='', type=None, **kwargs):
+        super().__init__(name=name, limit=upper_limit, default=default, type=type, **kwargs)
         self._lower_limit = None
         self.set_lower_limit(lower_limit)
 
@@ -643,18 +643,18 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
 
 class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
 
-    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit=None, storage_lower_limit=None, default=None, local_limit=None, local_lower_limit=None, **kwargs):
+    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit=None, storage_lower_limit=None, default=None, type: Callable = None, local_limit=None, local_lower_limit=None, **kwargs):
         super().__init__(name=name, **kwargs)
         self._limit = local_limit
         self._lower_limit = None
         self.set_lower_limit(local_lower_limit)
         self._has_own_storage = False
+        self._storage = None
 
         if storage is None:
-            storage = CliCollection(upper_limit=storage_limit, lower_limit=storage_lower_limit, default=default)
+            storage = CliCollection(upper_limit=storage_limit, lower_limit=storage_lower_limit, default=default, type=type)
             self._has_own_storage = True
-
-        self._storage = storage
+        self.set_storage(storage)
 
     def reset(self):
         pass
@@ -742,7 +742,7 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
         '''
         :return: As get plain but if the collection has length of 1 gets the only element of it
         '''
-        to_return = self._storage.get_plain()
+        to_return = self.get_plain()
         if isinstance(to_return, Sized) and isinstance(to_return, Iterable) and len(to_return) == 1:
             to_return = next(iter(to_return))
         return to_return
@@ -766,6 +766,8 @@ default_type = str | int | list[str | int] | None
 class Parameter(FinalNode, ConditionalActionActivation):
 
     def __init__(self, name: str, *, storage: CliCollection = None, storage_limit: int | None = 1, storage_lower_limit: int | None = 0, default: default_type = None, parameter_limit=1, parameter_lower_limit=1):
+        if storage is None and storage_limit != 1:
+            parameter_limit = storage_limit
         super().__init__(name, storage=storage, storage_limit=storage_limit, storage_lower_limit=storage_lower_limit, default=default, local_limit=parameter_limit, local_lower_limit=parameter_lower_limit, default_state=True)
 
     def add_to(self, *nodes: Node):
