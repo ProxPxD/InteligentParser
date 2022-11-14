@@ -58,8 +58,8 @@ class CategorierTest(AbstractTest):
         add_cat_str_func = lambda: add_cat_str.format(operands.get(), id_or_name_param.get(), categories.get_plain(), descriptions.get_plain())
         add_descr_str_func = lambda: add_descr_str.format(operands. get_nth(0), id_or_name_param.get(), categories.get_plain(), descriptions.get_plain(), operands.get_nth(1) if len(operands.get()) > 1 else 'Not specified')
 
-        add_node.add_action_when_storable_has_value(add_idea_str_func, operand_param, 'idea')
-        add_node.add_action_when_storable_has_value(add_cat_str_func, operand_param, 'cat')
+        add_node.add_action_when_storables_have_values(add_idea_str_func, operand_param, 'idea')
+        add_node.add_action_when_storables_have_values(add_cat_str_func, operand_param, 'cat')
         add_node.add_action(add_descr_str_func, lambda: operands.get() and operands.has('descr'))
 
         return self.cli
