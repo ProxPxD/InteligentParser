@@ -1,13 +1,17 @@
 import unittest
 
 from tests.categorierTest import CategorierTest
+from tests.finalNodeTest import FinalNodeTest
 from tests.glosbeTranslatorTest import GlosbeTranslatorTest
+from tests.nodeTest import NodeTest
 from tests.selectingParametersMethodsTest import SelectingParametersMethodsTest
 
 tests = [
     GlosbeTranslatorTest,
     CategorierTest,
     SelectingParametersMethodsTest,
+    FinalNodeTest,
+    NodeTest,
 ]
 
 
