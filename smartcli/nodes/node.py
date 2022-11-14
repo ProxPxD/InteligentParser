@@ -217,11 +217,13 @@ class FlagManagerMixin:
 
 
 class ParameterManagerMixin:
-    def __init__(self, **kwargs):
+    def __init__(self, parameters: Iterable[str | Parameter] = None, storages: tuple[CliCollection] = (), **kwargs):
         super().__init__(**kwargs)
         self._params: dict[str, Parameter] = {}
         self._orders: dict[int, list[str]] = {}
         self._default_order: list[str] = []
+        if parameters:
+            self.set_params(*parameters, storages=storages)
 
     def has_param(self, param: str | Parameter):
         name = get_name(param)
@@ -408,8 +410,8 @@ class HiddenNodeManagerMixin:
 
 class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin, FlagManagerMixin, HiddenNodeManagerMixin):
 
-    def __init__(self, name: str, **kwargs):
-        super().__init__(name=name, **kwargs)
+    def __init__(self, name: str, parameters: Iterable[str | Parameter] = None, param_storages: tuple[CliCollection] = (), **kwargs):
+        super().__init__(name=name, parameters=parameters, param_storages=param_storages, **kwargs)
         self._visible_nodes: dict[str, VisibleNode] = dict()
         self._collections: dict[str, CliCollection] = dict()
         self._actions: dict[bool_from_void, SmartList[any_from_void]] = dict()
@@ -523,11 +525,11 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
             return list(self._collections.values())
         return [self.get_collection(name) for name in names]
 
-    # Actions
+    # Actions, TODO: rename so the names won't interfere with the ActionActivationMixin. Possibly create another mixin
 
-    def add_action_when_storable_has_value(self, action: any_from_void, storables: IDefaultStorable | str | list[IDefaultStorable | str], values: str | list[str]):
+    def add_action_when_storables_have_values(self, action: any_from_void, storables: IDefaultStorable | str | list[IDefaultStorable | str], values: Any):
         storables = [storables] if isinstance(storables, (IDefaultStorable, str)) else storables
-        values = [values] if isinstance(values, str) else values
+        values = [values] if not isinstance(values, Iterable) or isinstance(values, str) else values
         if len(storables) != len(values):
             raise ParsingException
 
@@ -563,14 +565,14 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
 
 class VisibleNode(Node, ImplicitActionActivation):
 
-    def __init__(self, name: str, **kwargs):
-        super().__init__(name=name, activated=False, **kwargs)
+    def __init__(self, name: str, parameters: Iterable[str | Parameter] = None, param_storages: tuple[CliCollection] = (), **kwargs):
+        super().__init__(name=name, parameters=parameters, param_storages=param_storages, activated=False, **kwargs)
 
 
 class HiddenNode(Node, ConditionalActionActivation):  # TODO: refactor to remove duplications (active and inactive conditions should be a separate class
 
-    def __init__(self, name: str, active_condition: compositeActive = None, inactive_condition: compositeActive = None, **kwargs):
-        super().__init__(name=name, active_condition=active_condition, inactive_condition=inactive_condition, **kwargs)
+    def __init__(self, name: str,  parameters: Iterable[str | Parameter] = None, param_storages: tuple[CliCollection] = (), active_condition: compositeActive = None, inactive_condition: compositeActive = None, **kwargs):
+        super().__init__(name=name, parameters=parameters, param_storages=param_storages, active_condition=active_condition, inactive_condition=inactive_condition, **kwargs)
 
 
 class Root(VisibleNode):
