@@ -40,9 +40,9 @@ class AbstractTest(unittest.TestCase, abc.ABC):
 
         is_error = any(test == self for test, text in result.errors)
         is_failure = any(test == self for test, text in result.failures)
-        ok = not (is_error or is_failure)
+        passed = not (is_error or is_failure)
 
-        print('ok' if ok else 'ERROR' if is_error else 'FAIL' if is_failure else
+        print('passed' if passed else 'ERROR' if is_error else 'FAIL' if is_failure else
             'WRONG UNIT TEST OUTCOME CHECKING! Investigate (possible incompatible with a python newer than 3.10)')
 
     @classmethod
@@ -50,6 +50,11 @@ class AbstractTest(unittest.TestCase, abc.ABC):
         return cls.__name__.removesuffix('Test')
 
     def run_current_test_with_params(self, *method_nums):
+        '''
+        Run in a method declared after the desired parametrized method and named the same as it
+        :param method_nums:
+        :return:
+        '''
         if not method_nums:
             return
 
