@@ -67,7 +67,8 @@ class NodeTest(AbstractTest):
                            ('flag', Node.add_flag),
                            ('hidden_node', Node.add_hidden_node),
                            ('param', Node.add_param),
-    ])
+                           ('collection', Node.add_collection),
+                           ])
     def test_already_existing(self, name, adder):
         node = Node('test')
         adder(node, 'same')
