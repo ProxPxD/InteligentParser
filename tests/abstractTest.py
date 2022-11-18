@@ -94,7 +94,7 @@ class AbstractTest(unittest.TestCase, abc.ABC):
         methods = (getattr(self, actual_name) for expected_prefix in method_prefixes for actual_name in child_methods if actual_name.startswith(expected_prefix))
         return methods
 
-    def run_current_test_with_params(self, *method_nums):
+    def run_current_test_with_params(self, *method_nums):  # TODO: support custom names
         '''
         Run in a method declared after the desired parametrized method and named the same as it
         :param method_nums:
