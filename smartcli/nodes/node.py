@@ -239,12 +239,14 @@ class ParameterManagerMixin:
             return [self.get_param(name) for name in param_names]
 
     def set_params(self, *parameters: str | CliCollection | Parameter, storages: tuple[CliCollection, ...] = ()) -> None:
+        self._set_lacking_params(*parameters)
         for param, storage in zip_longest(parameters, storages):
-            self.add_param(param, storage)
+            name = get_name(param)
+            self.get_param(name).set_storage(storage)
 
     def _set_lacking_params(self, *params: str):
         for param in params:
-            if param not in self._params:
+            if not self.has_param(param):
                 self.add_param(param)
 
     def add_param(self, to_add: str | Parameter | CliCollection, storage: CliCollection = None) -> Parameter:
@@ -262,6 +264,9 @@ class ParameterManagerMixin:
             param.set_storage(storage)
         self._params[name] = param
         return param
+
+    def _add_param(self, to_add: str | Parameter | CliCollection, storage: CliCollection = None) -> Parameter:
+        pass
 
     def set_params_order(self, line: str) -> None:
         params = line.split(' ') if len(line) else []
@@ -427,13 +432,15 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
         self._action_results = []
 
     def get_resetable(self) -> set[IResetable]:
-        resetable = {self}
+        return {self} | self._get_resetable()
+
+    def _get_resetable(self) -> set[IResetable]:
+        resetable = set()
         for getter in [self.get_visible_nodes, self.get_hidden_nodes, self.get_flags, self.get_params, self.get_collections]:
             collection = getter()
             resetable |= set(collection)
             resetable |= set(resetable for elem in collection for resetable in elem._get_resetable())
         return resetable
-
     # Common
 
     def __getitem__(self, name: str):
@@ -729,7 +736,8 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
         return (self.type(elem) for elem in to_cast if elem)
 
     def set_storage(self, storage: CliCollection):
-        self._storage = storage
+        if storage is not None:
+            self._storage = storage
 
     def get_storage(self) -> CliCollection:
         return self._storage

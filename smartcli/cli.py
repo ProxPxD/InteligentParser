@@ -15,6 +15,7 @@ class Cli(IResetable):
         self._args: list = args or []
         self._active_nodes = []
         self._action_node: Node = None
+        self._is_reset_needed = False
 
     def set_args(self, args: list[str]):
         if args:
@@ -29,6 +30,7 @@ class Cli(IResetable):
         return self.parse(shlex.split(input))
 
     def parse(self, args: list[str] | str = None) -> Node:
+        self.reset()
         if isinstance(args, str):
             args = shlex.split(args)
         self.set_args(args)
@@ -42,8 +44,8 @@ class Cli(IResetable):
         self._action_node.parse_node_args(node_args)
         self._action_node.perform_all_actions()
 
+        self._is_reset_needed = True
         to_return = ParsingResult(self._action_node)  # TODO: finish parsing result
-        self.reset()
         return to_return
 
     def _get_active_nodes(self) -> list[Node]:
@@ -72,8 +74,10 @@ class Cli(IResetable):
         return args[len([node for node in self._active_nodes if not isinstance(node, HiddenNode)]):]
 
     def reset(self) -> None:
-        for resetable in self._root.get_resetable():
-            resetable.reset()
+        if self._is_reset_needed:
+            for resetable in self._root.get_resetable():
+                resetable.reset()
+            self._is_reset_needed = False
 
 
 class ParsingResult:  # TODO: implement default values/methods (like name, etc.)
