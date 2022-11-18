@@ -1,6 +1,7 @@
 from parameterized import parameterized
 
-from smartcli import Node, CliCollection, ParsingException
+from smartcli import Node, CliCollection
+from smartcli.exceptions import ValueAlreadyExistsError, IncorrectStateError
 from tests.abstractTest import AbstractTest
 
 
@@ -54,13 +55,13 @@ class NodeTest(AbstractTest):
     def test_only_hidden_nodes_option_with_visible_nodes_set_after(self):
         node = Node('test')
         node.set_only_hidden_nodes()
-        with self.assertRaises(ParsingException):
+        with self.assertRaises(IncorrectStateError):
             node.add_node('visible')
 
     def test_only_hidden_nodes_option_with_visible_nodes_set_before(self):
         node = Node('test')
         node.add_node('visible')
-        with self.assertRaises(ParsingException):
+        with self.assertRaises(IncorrectStateError):
             node.set_only_hidden_nodes()
 
     @parameterized.expand([('node', Node.add_node),
@@ -72,5 +73,8 @@ class NodeTest(AbstractTest):
     def test_already_existing(self, name, adder):
         node = Node('test')
         adder(node, 'same')
-        with self.assertRaises(ParsingException):
+        with self.assertRaises(ValueAlreadyExistsError):
             adder(node, 'same')
+
+    def test_already_existing(self):
+        self.run_current_test_with_params(2)

@@ -87,8 +87,10 @@ class AbstractTest(unittest.TestCase, abc.ABC):
 
         if method_nums[0] is None:
             method_nums = range(len(child_methods))
+        number_marks = (name.removeprefix(method_prefix).split('_')[0] for name in child_methods)
+        zero_count = len(next((num for num in number_marks if all((ch == '0' for ch in num))), ''))
 
-        method_prefixes = (f'{method_prefix}{i}' for i in method_nums)
+        method_prefixes = (f'{method_prefix}{str(i).zfill(zero_count)}' for i in method_nums)
         methods = (getattr(self, actual_name) for expected_prefix in method_prefixes for actual_name in child_methods if actual_name.startswith(expected_prefix))
         return methods
 

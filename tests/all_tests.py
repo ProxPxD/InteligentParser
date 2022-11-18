@@ -32,6 +32,5 @@ def main():
     AbstractTest.print_statistics(failure, errors, total)
 
 
-
 if __name__ == '__main__':
     main()

@@ -1,6 +1,7 @@
 from parameterized import parameterized
 
-from smartcli import Flag, ParsingException
+from smartcli import Flag
+from smartcli.exceptions import IncorrectArity
 from smartcli.nodes.node import FinalNode, Parameter, CliCollection
 from tests.abstractTest import AbstractTest
 
@@ -31,21 +32,21 @@ class FinalNodeTest(AbstractTest):
 
         return base
 
-    @parameterized.expand([(['added'], 'added', Flag('', storage_limit=1), FinalNode.get_plain),
-                           ('added', 'added', Flag('', storage_limit=1), FinalNode.get),
-                           (['added1', 'added2'], ['added1', 'added2'], Flag('', storage_limit=2), FinalNode.get_plain),
-                           (['added1', 'added2'], ['added1', 'added2'], Flag('', storage_limit=2), FinalNode.get),
-                           (['added'], 'added', Parameter('', storage_limit=1), FinalNode.get_plain),
-                           ('added', 'added', Parameter('', storage_limit=1), FinalNode.get),
-                           (['added1', 'added2'], ['added1', 'added2'], Parameter('', storage_limit=2), FinalNode.get_plain),
-                           (['added1', 'added2'], ['added1', 'added2'], Parameter('', storage_limit=2), FinalNode.get),
-                           (['added1'], ['added1', 'added2'], Parameter('', storage=CliCollection(upper_limit=2), parameter_limit=1), FinalNode.get_plain),
-                           ('added1', ['added1', 'added2'], Parameter('', storage=CliCollection(upper_limit=2), parameter_limit=1), FinalNode.get),
+    @parameterized.expand([(['added'], 'added', Flag('0', storage_limit=1), FinalNode.get_plain),
+                           ('added', 'added', Flag('1', storage_limit=1), FinalNode.get),
+                           (['added1', 'added2'], ['added1', 'added2'], Flag('2', storage_limit=2), FinalNode.get_plain),
+                           (['added1', 'added2'], ['added1', 'added2'], Flag('3', storage_limit=2), FinalNode.get),
+                           (['added'], 'added', Parameter('4', storage_limit=1), FinalNode.get_plain),
+                           ('added', 'added', Parameter('5', storage_limit=1), FinalNode.get),
+                           (['added1', 'added2'], ['added1', 'added2'], Parameter('6', storage_limit=2), FinalNode.get_plain),
+                           (['added1', 'added2'], ['added1', 'added2'], Parameter('7', storage_limit=2), FinalNode.get),
+                           (['added1'], ['added1', 'added2'], Parameter('8', storage=CliCollection(upper_limit=2), parameter_limit=1), FinalNode.get_plain),
+                           ('added1', ['added1', 'added2'], Parameter('9', storage=CliCollection(upper_limit=2), parameter_limit=1), FinalNode.get),
 
-                           (None, ['added'], Parameter('', storage=CliCollection(upper_limit=2), parameter_lower_limit=1), FinalNode.get_plain, ParsingException),
-                           (None, ['added'], Parameter('', storage=CliCollection(upper_limit=2), parameter_lower_limit=1), FinalNode.get, ParsingException),
-                           (None, ['added'], Flag('', storage=CliCollection(lower_limit=1, upper_limit=None)), FinalNode.get_plain, ParsingException),
-                           (None, ['added'], Flag('', storage=CliCollection(lower_limit=1, upper_limit=None)), FinalNode.get, ParsingException),
+                           (None, ['added'], Parameter('10', storage=CliCollection(upper_limit=2), parameter_lower_limit=2), FinalNode.get_plain, IncorrectArity),
+                           (None, ['added'], Parameter('11', storage=CliCollection(upper_limit=2), parameter_lower_limit=2), FinalNode.get, IncorrectArity),
+                           (None, ['added'], Flag('12', storage=CliCollection(lower_limit=2, upper_limit=None)), FinalNode.get_plain, IncorrectArity),
+                           (None, ['added'], Flag('13', storage=CliCollection(lower_limit=2, upper_limit=None)), FinalNode.get, IncorrectArity),
                            ],
                           name_func=name_add_and_get)
     def test_add_and_get(self, expected, to_add, final_node: FinalNode, getter, expected_exception=None):
@@ -57,7 +58,7 @@ class FinalNodeTest(AbstractTest):
                 getter(final_node)
 
     def test_add_and_get(self):
-        self.run_current_test_with_params()
+        self.run_current_test_with_params()#*list(range(10, 14)))
 
     @parameterized.expand([('plain', ['xD'], 'xD', Parameter(''), FinalNode.get_plain, CliCollection()),
                            ('get', 'xD', 'xD', Parameter(''), FinalNode.get, CliCollection()),
@@ -71,20 +72,21 @@ class FinalNodeTest(AbstractTest):
 
     @parameterized.expand([('of_single_to_int', [3], '3', int, None),
                            ('of_array_to_int', [10, 0], ['10', '0'], int, None),
-                           ('wrong_input_to_int', None, 'a', int, ParsingException),
+                           ('wrong_input_to_int', None, 'a', int, ValueError),
                            ('of_single_to_float', [0.5], '0.5', float, None),
                            ('of_array_to_float', [2.5, 0], ['2.5', '0'], float, None),
-                           ('wrong_input_float_to_float', None, 'a', float, ParsingException),
+                           ('wrong_input_float_to_float', None, 'a', float, ValueError),
                            ])
     def test_type_casting(self, name, expected, to_add, type, expected_exception=None):
         final_node = Parameter('', storage_limit=None)
         final_node.set_type(type)
-        final_node.add_to_values(to_add)
         if not expected_exception:
+            final_node.add_to_values(to_add)
             self.assertEqual(expected, final_node.get_plain())
         else:
             with self.assertRaises(expected_exception):
+                final_node.add_to_values(to_add)
                 final_node.get_plain()
 
     def test_type_casting(self):
-        self.run_current_test_with_params()
+        self.run_current_test_with_params(2, 5)

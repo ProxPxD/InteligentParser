@@ -5,7 +5,7 @@ from inspect import signature
 from itertools import islice, zip_longest
 from typing import Iterator, Callable, Iterable, Any, TypeVar, Type, Sized
 
-from smartcli.exceptions import ParsingException
+from smartcli.exceptions import ParsingException, ValueAlreadyExistsError, IncorrectStateError, IncorrectArity
 from smartcli.nodes.interfaces import INamable, IResetable, compositeActive, active, bool_from_iterable, bool_from_void, any_from_void, any_from_str
 from smartcli.nodes.smartList import SmartList
 from smartcli.nodes.storages import IActivable, DefaultStorage, IDefaultStorable
@@ -182,8 +182,8 @@ class FlagManagerMixin:
 
     def add_flag(self, main: str | Flag, *alternative_names: str, storage: CliCollection = None, storage_limit=0, flag_limit=None, default=None) -> Flag:
         name, flag = get_name_and_object_for_namable(main, Flag)
-        if self.has_flag(name):  # TODO: check alternative names
-            raise ValueError
+        if self.has_flag(name):
+            raise ValueAlreadyExistsError(Flag, name)
         flag.add_alternative_names(*alternative_names)
         flag.set_storage(storage if storage is not None else CliCollection(storage_limit, default=default))
         flag.set_limit(flag_limit)
@@ -257,7 +257,7 @@ class ParameterManagerMixin:
 
         name, param = get_name_and_object_for_namable(to_add, Parameter)
         if name in self._params:
-            raise ValueError
+            raise ValueAlreadyExistsError(Parameter, name)
         if storage is not None:
             param.set_storage(storage)
         self._params[name] = param
@@ -369,10 +369,13 @@ class HiddenNodeManagerMixin:
 
     def add_hidden_node(self, to_add: str | Node, active_condition: Callable[[], bool] = None, action: Callable = None) -> HiddenNode:
         node = HiddenNode(to_add) if not isinstance(to_add, Node) else to_add
+        name = node.name
+        if name in self._hidden_nodes:
+            raise ValueAlreadyExistsError(HiddenNode, name)
         node.set_active(active_condition)
         node.add_action(action)
-        self._hidden_nodes[to_add] = node
-        return self._hidden_nodes[to_add]
+        self._hidden_nodes[name] = node
+        return self._hidden_nodes[name]
 
     def get_hidden_node(self, name: str) -> HiddenNode:
         return self._hidden_nodes[name]
@@ -481,9 +484,11 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
         return tuple(nodes)
 
     def add_node(self, to_add: str | VisibleNode, action: Callable = None) -> VisibleNode:
+        if self._only_hidden:
+            raise IncorrectStateError("Tried to add a visible node when only hidden option had been set")
         name, node = get_name_and_object_for_namable(to_add, VisibleNode)
         if name in self._visible_nodes:
-            raise ValueError
+            raise ValueAlreadyExistsError(VisibleNode, name)
         node.add_action(action)
         self._visible_nodes[name] = node
         return node
@@ -507,6 +512,8 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
     # Only Hiddens
     def set_only_hidden_nodes(self) -> None:
         self._only_hidden = True
+        if len(self._visible_nodes):
+            raise IncorrectStateError("Visible nodes were set when only hidden nodes option has been set")
 
     def is_hidden_nodes_only(self):
         return self._only_hidden
@@ -514,6 +521,8 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
     # Collections
 
     def add_collection(self, name: str, limit: int = None) -> CliCollection:
+        if name in self._collections:
+            raise ValueAlreadyExistsError(CliCollection, name)
         self._collections[name] = CliCollection(limit, name=name)
         return self._collections[name]
 
@@ -619,7 +628,9 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
         '''
         to_return = self.copy() if self else super().get()
         if isinstance(to_return, Sized) and len(to_return) < self._lower_limit:
-            raise ValueError
+            raise IncorrectArity(len(to_return), f'> {self._lower_limit}')
+        elif not isinstance(to_return, Sized) and self._lower_limit > 1:
+            raise IncorrectArity(1, f'> {self._lower_limit}')
         return to_return
 
     def get_nth(self, n: int):
@@ -643,8 +654,18 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
 
 class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
 
-    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit=None, storage_lower_limit=None, default=None, type: Callable = None, local_limit=None, local_lower_limit=None, **kwargs):
+    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit: int | None = -1, storage_lower_limit: int | None = -1,
+                 default: default_type = None, type: Callable = None, local_limit=-1, local_lower_limit=-1, **kwargs):
         super().__init__(name=name, **kwargs)
+        if local_lower_limit == -1:
+            local_lower_limit = 0
+
+        if storage is not None and storage_limit != -1:
+            raise IncorrectStateError('Tried to change to storage limit')
+        if storage is None:
+            storage_limit = None
+            storage_lower_limit = 0
+
         self._limit = local_limit
         self._lower_limit = None
         self.set_lower_limit(local_lower_limit)
@@ -756,7 +777,9 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
             if self._limit is not None and self._limit < len(to_return):
                 to_return = to_return[:self._limit]
             if len(to_return) < self._lower_limit:
-                raise ValueError
+                raise IncorrectArity(len(to_return), f'> {self._lower_limit}')
+        elif self._lower_limit > 1:
+            raise IncorrectArity(1, f'> {self._lower_limit}')
         return to_return
 
 
@@ -765,10 +788,12 @@ default_type = str | int | list[str | int] | None
 
 class Parameter(FinalNode, ConditionalActionActivation):
 
-    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit: int | None = 1, storage_lower_limit: int | None = 0, default: default_type = None, parameter_limit=1, parameter_lower_limit=1):
-        if storage is None and storage_limit != 1:
-            parameter_limit = storage_limit
-        super().__init__(name, storage=storage, storage_limit=storage_limit, storage_lower_limit=storage_lower_limit, default=default, local_limit=parameter_limit, local_lower_limit=parameter_lower_limit, default_state=True)
+    def __init__(self, name: str, *, storage: CliCollection = None, storage_limit: int | None = -1, storage_lower_limit: int | None = -1,
+                 default: default_type = None, type: Callable = None, parameter_limit=-1, parameter_lower_limit=-1):
+        if parameter_limit == -1:
+            limit = storage.get_limit() if storage is not None else storage_limit
+            parameter_limit = limit if limit != -1 else 1
+        super().__init__(name, storage=storage, storage_limit=storage_limit, storage_lower_limit=storage_lower_limit, default=default, type=type, local_limit=parameter_limit, local_lower_limit=parameter_lower_limit, default_state=True)
 
     def add_to(self, *nodes: Node):
         for node in nodes:
@@ -777,7 +802,11 @@ class Parameter(FinalNode, ConditionalActionActivation):
 
 class Flag(FinalNode, ImplicitActionActivation):
 
-    def __init__(self, name, *alternative_names: str, storage: CliCollection = None, storage_limit: int = 0, storage_lower_limit=0, default: default_type = None, flag_limit=None, flag_lower_limit=0):
+    def __init__(self, name, *alternative_names: str, storage: CliCollection = None, storage_limit: int = -1, storage_lower_limit=-1, default: default_type = None, flag_limit=-1, flag_lower_limit=-1):
+        if flag_limit == -1:
+            limit = storage.get_limit() if storage is not None else storage_limit
+            flag_limit = limit if limit != -1 else None
+
         super().__init__(name, storage=storage, storage_limit=storage_limit, storage_lower_limit=storage_lower_limit, default=default, local_limit=flag_limit, local_lower_limit=flag_lower_limit, activated=False)
         self._alternative_names = set(alternative_names)
         self._on_activation: SmartList[Callable] = SmartList()
