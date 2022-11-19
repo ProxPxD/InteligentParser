@@ -14,6 +14,9 @@ class INamable:
     def name(self):
         return self._name
 
+    def get_name(self):
+        return self._name
+
     def has_name(self, name: str):
         return name == self.name
 

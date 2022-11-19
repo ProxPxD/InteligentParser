@@ -43,18 +43,15 @@ class SelectingParametersMethodsTest(AbstractTest):
     def test_variable_parameters_with_orders_and_default_parameters(self):
         self.run_current_test_with_params()
 
-    def test_default_params_with_orders(self, name, result, argument_string):
-        self.fail('Not implemented yet')  # TODO: orders proceed default params
-
     # TODO: desactivated params proceed orders thus the order with desactivated params shall not be taken
-    def test_desactivated_params_with_orders_using_variable_parameters(self, name, result, argument_string):
+    def test_desactivated_params_with_orders_using_variable_parameters(self):
         self.fail('Not implemented yet')
 
     # TODO: desactivated_params proceed defaults thus the order without them should be used with the defualt one. Check: param count has a desactivated param
-    def test_desactivated_params_with_orders_using_default_params(self, name, result, argument_string):
+    def test_desactivated_params_with_orders_using_default_params(self):
         self.fail('Not implemented yet')
 
     # TODO: variable params proceeds default. If param count is less the param count with parameters, paramet order should not be used
-    def test_variable_params_with_defaults(self, name, result, argument_string):
+    def test_variable_params_with_defaults(self):
         self.fail('Not implemented yet')
 

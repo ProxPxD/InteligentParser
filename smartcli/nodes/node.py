@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC
 from inspect import signature
-from itertools import islice, zip_longest
+from itertools import islice, zip_longest, chain
 from typing import Iterator, Callable, Iterable, Any, TypeVar, Type, Sized
 
 from smartcli.exceptions import ParsingException, ValueAlreadyExistsError, IncorrectStateError, IncorrectArity
@@ -221,7 +221,7 @@ class ParameterManagerMixin:
         super().__init__(**kwargs)
         self._params: dict[str, Parameter] = {}
         self._orders: dict[int, list[str]] = {}
-        self._default_order: list[str] = []
+        self._defaults_order: list[str] = []
         if parameters:
             self.set_params(*parameters, storages=storages)
 
@@ -289,7 +289,7 @@ class ParameterManagerMixin:
         defaults = defaults or []
         for param, default in zip_longest(params, defaults):
             name = str(param)
-            self._default_order.append(name)
+            self._defaults_order.append(name)
             if default is not None:
                 self.get_param(name).set_default(default)
 
@@ -322,10 +322,10 @@ class ParameterManagerMixin:
         return closest, self._orders[closest]
 
     def _get_closest_arity(self, parameters_number: int) -> int:
-        return min((num for num in self._orders if num >= parameters_number), default=None)
+        return min(filter(lambda num: num >= parameters_number, self._orders), default=None)
 
     def _parse_single_args_to_params(self, args: list[str], order: list[str], needed_defaults: int):
-        params_to_use = list(self._get_params_to_use(order, needed_defaults))
+        params_to_use = list(self._get_params_to_use(args, order, needed_defaults))
         for param, arg in zip(params_to_use, args):
             param.add_to_values(arg)
         rest_of_args = args[len(params_to_use):]
@@ -334,16 +334,26 @@ class ParameterManagerMixin:
         if params_to_use and rest_of_args and params_to_use[-1].is_multi_parameter():
             params_to_use[-1].add_to_values(rest_of_args)
 
-    def _get_params_to_use(self, order: list[str], needed_defaults: int) -> Iterator[Parameter]:
-        params_to_skip = self.get_params_to_skip(needed_defaults)
+    def _get_params_to_use(self, args: list[str], order: list[str], needed_defaults: int) -> Iterator[Parameter]:
+        params_to_skip = self.get_params_to_skip(args, needed_defaults)
         params_to_use = (self.get_param(param_name) for param_name in order if param_name not in params_to_skip)
         return params_to_use
 
-    def get_params_to_skip(self, needed_defaults: int) -> list[str]:
-        to_skip = self._default_order[:needed_defaults]
-        lacking_defaults = needed_defaults - len(to_skip)
-        to_skip += [param.name for param in islice(self.get_optional_params(), lacking_defaults)]
-        return to_skip
+    def get_params_to_skip(self, args: list[str], needed_defaults: int) -> Iterable[str]:
+        prioritized_defaults = self._defaults_order[:needed_defaults]
+        lacking_defaults = needed_defaults - len(prioritized_defaults)
+        ordered_to_skip = self._get_params_to_skip_in_order(args)
+        lacking_params_to_skip = filter(lambda p: p.name not in prioritized_defaults, ordered_to_skip)
+        lacking_names_to_skip = map(INamable.get_name, lacking_params_to_skip)
+        rest_to_skip = islice(lacking_names_to_skip, lacking_defaults)
+        return chain(prioritized_defaults, rest_to_skip)
+
+    def _get_params_to_skip_in_order(self, args: list[str]) -> Iterable[Parameter]:
+        optionals = self.get_optional_params()
+        desactivated = filter(lambda p: not p.is_active(), optionals)
+        multi = filter(Parameter.is_multi_parameter, optionals)
+        defaults = filter(Parameter.is_default_set, optionals)
+        return chain(desactivated, multi, defaults)
 
     def _parse_list_args_by_order(self, args: list[str], order: list[str]) -> None:
         self.get_param(order[-1]).add_to_values(args)
