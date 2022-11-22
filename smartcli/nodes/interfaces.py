@@ -68,6 +68,9 @@ class IActivable(abc.ABC):
     def is_active(self) -> bool:
         raise NotImplemented
 
+    def is_inactive(self) -> bool:
+        return not self.is_active()
+
 
 bool_from_void = Callable[[], bool]
 any_from_void = Callable[[], Any]

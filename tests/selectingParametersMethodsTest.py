@@ -3,7 +3,7 @@ from functools import reduce
 
 from parameterized import parameterized
 
-from smartcli import Cli
+from smartcli import Cli, Parameter
 from tests.abstractTest import AbstractTest
 
 
@@ -40,12 +40,37 @@ class SelectingParametersMethodsTest(AbstractTest):
         two = cli.parse('c ' + argument_string)
         self.assertEqual(result, two.result)
 
-    def test_variable_parameters_with_orders_and_default_parameters(self):
-        self.run_current_test_with_params()
+    # def test_variable_parameters_with_orders_and_default_parameters(self):
+    #     self.run_current_test_with_params()
 
-    # TODO: desactivated params proceed orders thus the order with desactivated params shall not be taken
-    def test_desactivated_params_with_orders_using_variable_parameters(self):
-        self.fail('Not implemented yet')
+    def create_desactivational_cli_with_variable_parameter(self):
+        self.cli = Cli()
+        root = self.cli.root
+        no_end = root.add_flag('--no-end')
+        root.set_params_order('seperator ending segments')
+        segs: Parameter
+        end: Parameter
+        sep, end, segs = root.get_params('seperator ending segments')
+        root.set_type_to_params(str, sep, end, segs)
+        segs.set_limit(None)
+        segs.set_lower_limit(0)
+        end.set_inactive_on_flags(no_end)
+
+        root.add_action(lambda: sep.get().join(segs.get_plain()) + end.get(), when=end.is_active)
+        root.add_action(lambda: sep.get().join(segs.get_plain()), when=end.is_inactive)
+
+        return self.cli
+
+    @parameterized.expand([('base_case', 'poczta.onet.pl', 'join . .pl poczta onet'),
+                           ('skip_desactivated', 'poczta.onet.pl', 'join . poczta onet pl --no-end'),
+                           ])
+    def test_desactivated_params_with_orders_using_variable_parameters(self, name, result, argument_string):
+        '''
+        desactivated params proceed orders thus the order with desactivated params shall not be taken
+        '''
+        cli = self.create_desactivational_cli_with_variable_parameter()
+        output = cli.parse(argument_string)
+        self.assertEqual(result, output.result)
 
     # TODO: desactivated_params proceed defaults thus the order without them should be used with the defualt one. Check: param count has a desactivated param
     def test_desactivated_params_with_orders_using_default_params(self):
