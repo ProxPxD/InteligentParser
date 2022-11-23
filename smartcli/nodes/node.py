@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import shlex
 from abc import ABC
 from inspect import signature
 from itertools import islice, zip_longest, chain
 from typing import Iterator, Callable, Iterable, Any, TypeVar, Type, Sized
+
+from more_itertools import unique_everseen
 
 from smartcli.exceptions import ParsingException, ValueAlreadyExistsError, IncorrectStateError, IncorrectArity
 from smartcli.nodes.interfaces import INamable, IResetable, compositeActive, active, bool_from_iterable, bool_from_void, any_from_void, any_from_str
@@ -216,14 +219,18 @@ class FlagManagerMixin:
         return rest
 
 
-class ParameterManagerMixin:
+class ParameterManagerMixin(IResetable):
     def __init__(self, parameters: Iterable[str | Parameter] = None, storages: tuple[CliCollection] = (), **kwargs):
         super().__init__(**kwargs)
         self._params: dict[str, Parameter] = {}
         self._orders: dict[int, list[str]] = {}
         self._defaults_order: list[str] = []
+        self._disabled_orders: list[int] = []
         if parameters:
             self.set_params(*parameters, storages=storages)
+
+    def reset(self):
+        self._disabled_orders = []
 
     def has_param(self, param: str | Parameter):
         name = get_name(param)
@@ -236,6 +243,8 @@ class ParameterManagerMixin:
         if not param_names:
             return list(self._params.values())
         else:
+            if ' ' in param_names[0]:
+                param_names = shlex.split(param_names[0])
             return [self.get_param(name) for name in param_names]
 
     def set_params(self, *parameters: str | CliCollection | Parameter, storages: tuple[CliCollection, ...] = ()) -> None:
@@ -265,9 +274,6 @@ class ParameterManagerMixin:
         self._params[name] = param
         return param
 
-    def _add_param(self, to_add: str | Parameter | CliCollection, storage: CliCollection = None) -> Parameter:
-        pass
-
     def set_params_order(self, line: str) -> None:
         params = line.split(' ') if len(line) else []
         self._set_lacking_params(*params)
@@ -276,8 +282,14 @@ class ParameterManagerMixin:
             raise ValueError
         self._orders[count] = params
 
+    def disable_order(self, num: int):
+        self._disabled_orders.append(num)
+
+    def _get_disabled_orders(self) -> list[int]:
+        return self._disabled_orders
+
     def get_optional_params(self) -> Iterator[Parameter]:
-        return (param for param in self._params.values() if param.is_default_set() or not param.is_active() or not param.has_lower_limit())
+        return (param for param in self._params.values() if param.is_default_set() or param.is_inactive() or not param.has_lower_limit())
 
     def _get_optional_params_count(self):
         return len(list(self.get_optional_params()))
@@ -293,70 +305,75 @@ class ParameterManagerMixin:
             if default is not None:
                 self.get_param(name).set_default(default)
 
-    def parse_node_args(self, args: list[str]):
-        parameters_number = min(len(args), len(self.get_params()))
-        if self._is_parsing_possible(parameters_number):
-            self._set_default_order_if_not_exist()
-            self._parse_node_args_by_defaults(parameters_number, args)
-        elif parameters_number != 0:
-            raise ParsingException(self, args)  # TODO: refactor parsing
-
-    def _is_parsing_possible(self, parameters_number: int):
-        return parameters_number != 0 and (parameters_number in self._orders or parameters_number >= self._get_obligatory_params_count())
+    def parse_node_args(self, args: list[str]):  # TODO: separate to methods
+        if not args:
+            return
+        self._set_default_order_if_not_exist()
+        params_to_use = list(self.get_params_to_use(args))
+        self._set_args_to_params(params_to_use, args)
 
     def _set_default_order_if_not_exist(self) -> None:
         if not self._orders:
             params = self._params.keys()
             self._orders[len(params)] = list(params)
 
-    def _parse_node_args_by_defaults(self, parameters_number: int, args: list[str]):
-        needed_defaults, order = self._get_needed_defaults_with_order(parameters_number)
-        self._parse_single_args_to_params(args, order, needed_defaults)
+    def get_params_to_use(self, args: list[str]) -> Iterable[Parameter]:
+        arity = len(args)
+        order = self._get_order_for_arity(arity)
+        param_names_to_skip = list(self._get_param_names_to_skip_for(order, arity))
+        param_names_to_use = (param for param in order if param not in param_names_to_skip)
+        params_to_use = map(self.get_param, param_names_to_use)
+        return params_to_use
 
-    def _get_needed_defaults_with_order(self, parameters_number: int) -> tuple[int, list[str]]:
-        closest, order = self._get_closest_arity_with_order(parameters_number)
-        return closest - parameters_number, order
+    def _get_order_for_arity(self, arity: int):
+        allowed = list(self.get_allowed_arities())
+        right = self._get_equal_arity(arity, allowed)
+        if right is None:
+            self._find_multi_param_arity_for_arity(arity, allowed)
+        if right is None:
+            right = self._find_greater_arity_for_arity(arity, allowed)
 
-    def _get_closest_arity_with_order(self, parameters_number: int) -> tuple[int, list[str]]:
-        closest = self._get_closest_arity(parameters_number)
-        return closest, self._orders[closest]
+        return self._orders[right]
 
-    def _get_closest_arity(self, parameters_number: int) -> int:
-        return min(filter(lambda num: num >= parameters_number, self._orders), default=None)
+    def get_allowed_arities(self) -> Iterable[int]:
+        return filter(lambda arity: arity not in self._disabled_orders, self._orders.keys())
 
-    def _parse_single_args_to_params(self, args: list[str], order: list[str], needed_defaults: int):
-        params_to_use = list(self._get_params_to_use(args, order, needed_defaults))
+    def _get_equal_arity(self, arity: int, allowed_arities: list[int]):
+        return next(filter(lambda a: a == arity, allowed_arities), None)
+
+    def _find_multi_param_arity_for_arity(self, arity: int, allowed_arities: list[int]) -> int:
+        multi_param_arities = filter(lambda a: self.get_param(self._orders[a][-1]).is_multi_parameter(), allowed_arities)
+        smaller_arities = filter(lambda a: a < arity, multi_param_arities)
+        return max(smaller_arities, default=None)
+
+    def _find_greater_arity_for_arity(self, arity: int, allowed_arities: list[int]):
+        return min(filter(lambda a: a > arity, allowed_arities))
+
+    def _get_param_names_to_skip_for(self, order: list[str], arity: int) -> Iterable[str]:
+        if arity <= len(order):
+            return []
+        all_to_skip = self._get_param_names_to_skip()
+        present_params = filter(lambda p: p in order, all_to_skip)
+        lacking_count = len(order) - arity
+        return islice(present_params, lacking_count)
+
+    def _get_param_names_to_skip(self) -> Iterable[str]:
+        prioritized_defaults = self._defaults_order
+        inactivated = filter(Parameter.is_inactive, self._params)
+        no_lower = filter(Parameter.is_without_lowest_limit, self._params)
+        defaults = filter(Parameter.is_default_set, self._params)
+        ordered_from_optional = map(INamable.get_name, chain(inactivated, no_lower, defaults))
+        return unique_everseen(chain(prioritized_defaults, ordered_from_optional))
+
+    def _set_args_to_params(self, params_to_use: list[Parameter], args: list[str]) -> None:
         for param, arg in zip(params_to_use, args):
             param.add_to_values(arg)
         rest_of_args = args[len(params_to_use):]
-        if not params_to_use and rest_of_args:
+
+        if rest_of_args and (not params_to_use or not params_to_use[-1].is_multi_parameter()):
             raise ValueError
-        if params_to_use and rest_of_args and params_to_use[-1].is_multi_parameter():
+        elif rest_of_args:
             params_to_use[-1].add_to_values(rest_of_args)
-
-    def _get_params_to_use(self, args: list[str], order: list[str], needed_defaults: int) -> Iterator[Parameter]:
-        params_to_skip = self.get_params_to_skip(args, needed_defaults)
-        params_to_use = (self.get_param(param_name) for param_name in order if param_name not in params_to_skip)
-        return params_to_use
-
-    def get_params_to_skip(self, args: list[str], needed_defaults: int) -> Iterable[str]:
-        prioritized_defaults = self._defaults_order[:needed_defaults]
-        lacking_defaults = needed_defaults - len(prioritized_defaults)
-        ordered_to_skip = self._get_params_to_skip_in_order(args)
-        lacking_params_to_skip = filter(lambda p: p.name not in prioritized_defaults, ordered_to_skip)
-        lacking_names_to_skip = map(INamable.get_name, lacking_params_to_skip)
-        rest_to_skip = islice(lacking_names_to_skip, lacking_defaults)
-        return chain(prioritized_defaults, rest_to_skip)
-
-    def _get_params_to_skip_in_order(self, args: list[str]) -> Iterable[Parameter]:
-        optionals = self.get_optional_params()
-        desactivated = filter(lambda p: not p.is_active(), optionals)
-        multi = filter(Parameter.is_multi_parameter, optionals)
-        defaults = filter(Parameter.is_default_set, optionals)
-        return chain(desactivated, multi, defaults)
-
-    def _parse_list_args_by_order(self, args: list[str], order: list[str]) -> None:
-        self.get_param(order[-1]).add_to_values(args)
 
     def _param_from(self, param: Parameter | str):
         return self.get_param(param) if isinstance(param, str) else param
@@ -426,7 +443,7 @@ class HiddenNodeManagerMixin:
 #############
 
 
-class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin, FlagManagerMixin, HiddenNodeManagerMixin):
+class Node(INamable, ParameterManagerMixin, IResetable, ActionOnActivationMixin, FlagManagerMixin, HiddenNodeManagerMixin):
 
     def __init__(self, name: str, parameters: Iterable[str | Parameter] = None, param_storages: tuple[CliCollection] = (), **kwargs):
         super().__init__(name=name, parameters=parameters, param_storages=param_storages, **kwargs)
@@ -439,6 +456,7 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
     # Resetable
 
     def reset(self) -> None:
+        super().reset()
         self._action_results = []
 
     def get_resetable(self) -> set[IResetable]:
@@ -475,7 +493,7 @@ class Node(INamable, IResetable, ActionOnActivationMixin, ParameterManagerMixin,
 
     def _get_storables_getters(self) -> Iterator[Callable[[str], IDefaultStorable]]:
         return [self.get_param, self.get_flag, self.get_collection]
-    
+
     def __contains__(self, node: str | INamable):
         return self.has(node)
 
@@ -674,8 +692,6 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
     def __init__(self, name: str, *, storage: CliCollection = None, storage_limit: int | None = -1, storage_lower_limit: int | None = -1,
                  default: default_type = None, type: Callable = None, local_limit=-1, local_lower_limit=-1, **kwargs):
         super().__init__(name=name, **kwargs)
-        if local_lower_limit == -1:
-            local_lower_limit = 0
 
         if storage is not None and storage_limit != -1:
             raise IncorrectStateError('Tried to change to storage limit')
@@ -711,7 +727,7 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
         return self._limit
 
     def is_multi_parameter(self):
-        return self._limit is None or self._limit > 0
+        return self._limit is None or self._limit > 1
 
     def set_lower_limit(self, limit: int | None):
         self._lower_limit = limit or 0
@@ -721,6 +737,9 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
 
     def has_lower_limit(self):
         return any((self._lower_limit, self._storage.get_lower_limit()))
+
+    def is_without_lowest_limit(self):
+        return not self.has_lower_limit()
 
     def set_storage_limit(self, limit: int | None, *, storage: CliCollection = None) -> None:
         if storage:

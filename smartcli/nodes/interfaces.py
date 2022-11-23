@@ -41,7 +41,7 @@ class IActivable(abc.ABC):
 
     @staticmethod
     def _map_to_single(*to_map: compositeActive, func: bool_from_iterable = all) -> bool_from_void | None:
-        if not to_map :
+        if not to_map:
             raise ValueError
         if len(to_map) == 1 and isinstance(to_map[0], Callable):
             return to_map[0]
