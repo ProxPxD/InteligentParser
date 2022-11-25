@@ -49,7 +49,7 @@ class NodeTest(AbstractTest):
             node = Node('test')
             node.set_only_hidden_nodes()
             node.add_hidden_node('hidden')
-        except Exception:
+        except IncorrectStateError:
             self.fail('Hidden node addition error with only hidden node setting')
 
     def test_only_hidden_nodes_option_with_visible_nodes_set_after(self):
