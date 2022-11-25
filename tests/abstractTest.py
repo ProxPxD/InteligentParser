@@ -15,6 +15,7 @@ class AbstractTest(unittest.TestCase, abc.ABC):
     total = 0
     failure = 0
     errors = 0
+    skipped = 0
 
     @classmethod
     def print_sep_with_text(cls, text: str, sep: str = '*') -> None:
@@ -33,15 +34,17 @@ class AbstractTest(unittest.TestCase, abc.ABC):
         cls.print_statistics(percentage=False)
 
     @classmethod
-    def print_statistics(cls, failure=None, errors=None, total=None, short=False, percentage=True):
+    def print_statistics(cls, failure=None, errors=None, skipped=None, total=None, *, short=False, percentage=True):
         if failure is None:
             failure = cls.failure
         if errors is None:
             errors = cls.errors
+        if skipped is None:
+            skipped = cls.skipped
         if total is None:
             total = cls.total
         failed = failure + errors
-        passed = total - failed
+        passed = total - failed - skipped
         if short:
             print(f'({failure}F, {errors}E, {passed}P)/{total}')
         else:
@@ -63,15 +66,18 @@ class AbstractTest(unittest.TestCase, abc.ABC):
 
         is_error = any(test == self for test, text in result.errors)
         is_failure = any(test == self for test, text in result.failures)
-        passed = not (is_error or is_failure)
+        is_skipped = any(test == self for test, text in result.skipped)
+        passed = not (is_error or is_failure or is_skipped)
 
         self.__class__.total += 1
         if is_error:
             self.__class__.errors += 1
         if is_failure:
             self.__class__.failure += 1
+        if is_skipped:
+            self.__class__.skipped += 1
 
-        print('PASS' if passed else 'ERROR' if is_error else 'FAIL' if is_failure else
+        print('PASS' if passed else 'ERROR' if is_error else 'FAIL' if is_failure else 'SKIP' if is_skipped else
             'WRONG UNIT TEST OUTCOME CHECKING! Investigate (possible incompatible with a python newer than 3.10)')
 
     @classmethod

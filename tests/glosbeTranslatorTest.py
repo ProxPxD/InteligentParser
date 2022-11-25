@@ -66,22 +66,22 @@ class GlosbeTranslatorTest(AbstractTest):
         to_langs.add_get_default_if_or(lambda: self.get_nth_lang(1), single_node.is_active, word_node.is_active)
         to_langs.add_get_default_if_or(lambda: self.get_first_n_langs(self.limit), lang_node.is_active, double_multi_node.is_active)
         # Single's params
-        single_node.set_params_order('word from_lang to_lang')
-        single_node.set_params_order('word to_lang')
-        single_node.set_params_order('word')
+        single_node.set_possible_param_order('word from_lang to_lang')
+        single_node.set_possible_param_order('word to_lang')
+        single_node.set_possible_param_order('word')
         single_node.set_params('word', 'from_lang', 'to_lang', storages=(words, from_langs, to_langs))
         # Lang's params
         lang_node.set_params('word', 'from_lang', 'to_langs', storages=(words, from_langs, to_langs))
-        lang_node.set_params_order('words from_lang to_langs')
+        lang_node.set_possible_param_order('words from_lang to_langs')
         lang_node.set_default_setting_order('from_lang')
         # Word's params
         word_node.set_params('word', 'from_lang', 'to_langs', storages=(words, from_langs, to_langs))
-        word_node.set_params_order('from_lang to_langs words')
+        word_node.set_possible_param_order('from_lang to_langs words')
         lang_node.set_default_setting_order('from_lang', 'to_langs')
         # Double's params
         double_multi_node.set_params('word', 'from_lang', 'to_langs', storages=(words, from_langs, to_langs))
-        double_multi_node.set_params_order('from_lang')
-        double_multi_node.set_params_order('')
+        double_multi_node.set_possible_param_order('from_lang')
+        double_multi_node.set_possible_param_order('')
         return self.cli
 
     def test_getting_default_value(self):

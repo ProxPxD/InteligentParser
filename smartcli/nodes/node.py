@@ -3,7 +3,7 @@ from __future__ import annotations
 import shlex
 from abc import ABC
 from inspect import signature
-from itertools import islice, zip_longest, chain
+from itertools import islice, zip_longest, chain, takewhile
 from typing import Iterator, Callable, Iterable, Any, TypeVar, Type, Sized
 
 from more_itertools import unique_everseen
@@ -226,6 +226,7 @@ class ParameterManagerMixin(IResetable):
         self._orders: dict[int, list[str]] = {}
         self._defaults_order: list[str] = []
         self._disabled_orders: list[int] = []
+        self._used_params: list[Parameter] = []
         if parameters:
             self.set_params(*parameters, storages=storages)
 
@@ -239,13 +240,13 @@ class ParameterManagerMixin(IResetable):
     def get_param(self, name: str):
         return self._params[name]
 
-    def get_params(self, *param_names: str) -> list[Parameter]:
+    def get_params(self, *param_names: str) -> tuple[Parameter, ...]:
         if not param_names:
-            return list(self._params.values())
+            return tuple(self._params.values())
         else:
             if ' ' in param_names[0]:
                 param_names = shlex.split(param_names[0])
-            return [self.get_param(name) for name in param_names]
+            return tuple(self.get_param(name) for name in param_names)
 
     def set_params(self, *parameters: str | CliCollection | Parameter, storages: tuple[CliCollection, ...] = ()) -> None:
         self._set_lacking_params(*parameters)
@@ -274,7 +275,7 @@ class ParameterManagerMixin(IResetable):
         self._params[name] = param
         return param
 
-    def set_params_order(self, line: str) -> None:
+    def set_possible_param_order(self, line: str) -> None:
         params = line.split(' ') if len(line) else []
         self._set_lacking_params(*params)
         count = len(params)
@@ -308,9 +309,11 @@ class ParameterManagerMixin(IResetable):
     def parse_node_args(self, args: list[str]):  # TODO: separate to methods
         if not args:
             return
+        self._arg_count = len(args)
         self._set_default_order_if_not_exist()
         params_to_use = list(self.get_params_to_use(args))
         self._set_args_to_params(params_to_use, args)
+        self._used_params = params_to_use
 
     def _set_default_order_if_not_exist(self) -> None:
         if not self._orders:
@@ -319,17 +322,17 @@ class ParameterManagerMixin(IResetable):
 
     def get_params_to_use(self, args: list[str]) -> Iterable[Parameter]:
         arity = len(args)
-        order = self._get_order_for_arity(arity)
+        order = self._get_right_order_for_arity(arity)
         param_names_to_skip = list(self._get_param_names_to_skip_for(order, arity))
-        param_names_to_use = (param for param in order if param not in param_names_to_skip)
+        param_names_to_use = filter(lambda p: p not in param_names_to_skip, order)
         params_to_use = map(self.get_param, param_names_to_use)
         return params_to_use
 
-    def _get_order_for_arity(self, arity: int):
+    def _get_right_order_for_arity(self, arity: int):
         allowed = list(self.get_allowed_arities())
-        right = self._get_equal_arity(arity, allowed)
+        right = self._find_smallest_ge_arity_with_no_lowest_limit_params_at_end(arity, allowed)
         if right is None:
-            self._find_multi_param_arity_for_arity(arity, allowed)
+            right = self._find_multi_param_lt_arity_for_arity(arity, allowed)
         if right is None:
             right = self._find_greater_arity_for_arity(arity, allowed)
 
@@ -338,11 +341,22 @@ class ParameterManagerMixin(IResetable):
     def get_allowed_arities(self) -> Iterable[int]:
         return filter(lambda arity: arity not in self._disabled_orders, self._orders.keys())
 
-    def _get_equal_arity(self, arity: int, allowed_arities: list[int]):
-        return next(filter(lambda a: a == arity, allowed_arities), None)
+    # ge - greater or equal
+    def _find_smallest_ge_arity_with_no_lowest_limit_params_at_end(self, arity: int, allowed_arities: list[int]):
+        ge_arities = filter(lambda a: a >= arity, allowed_arities)
+        condition = lambda a: self._is_equal_with_no_lowest_limit_final_params(arity, a)
+        without_lowest_limit_final_params = filter(condition, ge_arities)
+        return min(without_lowest_limit_final_params, default=None)
 
-    def _find_multi_param_arity_for_arity(self, arity: int, allowed_arities: list[int]) -> int:
-        multi_param_arities = filter(lambda a: self.get_param(self._orders[a][-1]).is_multi_parameter(), allowed_arities)
+    def _is_equal_with_no_lowest_limit_final_params(self, arity_to_check: int, order_arity: int) -> bool:
+        order = self._orders[order_arity]
+        reversed_params = map(self.get_param, reversed(order))
+        true_minimal_arity = len(order) - len(list(takewhile(Parameter.is_without_lowest_limit, reversed_params)))
+        return true_minimal_arity <= arity_to_check
+
+    # lt - less than
+    def _find_multi_param_lt_arity_for_arity(self, arity: int, allowed_arities: list[int]) -> int:
+        multi_param_arities = filter(lambda a: self.get_param(self._orders[a][-1]).is_multi(), allowed_arities)
         smaller_arities = filter(lambda a: a < arity, multi_param_arities)
         return max(smaller_arities, default=None)
 
@@ -350,27 +364,35 @@ class ParameterManagerMixin(IResetable):
         return min(filter(lambda a: a > arity, allowed_arities))
 
     def _get_param_names_to_skip_for(self, order: list[str], arity: int) -> Iterable[str]:
-        if arity <= len(order):
-            return []
-        all_to_skip = self._get_param_names_to_skip()
-        present_params = filter(lambda p: p in order, all_to_skip)
-        lacking_count = len(order) - arity
-        return islice(present_params, lacking_count)
+        must_be_skipped = list(self._get_param_names_that_must_be_skipped(order))
+        remaining_params_count = len(order) - len(must_be_skipped)
+        if arity >= remaining_params_count:
+            return must_be_skipped
+        lacking_to_skip = remaining_params_count - arity
 
-    def _get_param_names_to_skip(self) -> Iterable[str]:
-        prioritized_defaults = self._defaults_order
-        inactivated = filter(Parameter.is_inactive, self._params)
-        no_lower = filter(Parameter.is_without_lowest_limit, self._params)
-        defaults = filter(Parameter.is_default_set, self._params)
-        ordered_from_optional = map(INamable.get_name, chain(inactivated, no_lower, defaults))
-        return unique_everseen(chain(prioritized_defaults, ordered_from_optional))
+        potential_to_skip = list(filter(lambda p: p not in must_be_skipped, order))
+        can_be_skipped = self._get_param_names_that_can_be_skipped(potential_to_skip)
+        needed_to_skip = islice(can_be_skipped, lacking_to_skip)
+        return chain(must_be_skipped, needed_to_skip)
+
+    def _get_param_names_that_must_be_skipped(self, from_order: list[str]) -> Iterable[str]:
+        desactivated = filter(lambda p: self.get_param(p).is_inactive(), from_order)
+        return desactivated
+
+    def _get_param_names_that_can_be_skipped(self, params_to_check: list[str]) -> Iterable[str]:
+        prioritized_defaults = filter(params_to_check.__contains__, self._defaults_order)
+        order_params = list(map(self.get_param, params_to_check))
+        no_lower = filter(Parameter.is_without_lowest_limit, order_params)
+        defaults = filter(Parameter.is_default_set, order_params)
+        non_prioritized = map(INamable.get_name, chain(no_lower, defaults))
+        return unique_everseen(chain(prioritized_defaults, non_prioritized))
 
     def _set_args_to_params(self, params_to_use: list[Parameter], args: list[str]) -> None:
         for param, arg in zip(params_to_use, args):
             param.add_to_values(arg)
         rest_of_args = args[len(params_to_use):]
 
-        if rest_of_args and (not params_to_use or not params_to_use[-1].is_multi_parameter()):
+        if rest_of_args and (not params_to_use or not params_to_use[-1].is_multi()):
             raise ValueError
         elif rest_of_args:
             params_to_use[-1].add_to_values(rest_of_args)
@@ -582,8 +604,20 @@ class Node(INamable, ParameterManagerMixin, IResetable, ActionOnActivationMixin,
             when = lambda: storable_has_value(storable, value)
             self.add_action(action=action, when=when)
 
-    def add_action(self, action: any_from_void, when: bool_from_void = None) -> None:
+    def add_action_when_is_active(self, action: any_from_void, activable: IActivable):
+        self.add_action(action, activable.is_active)
+
+    def add_action_when_is_inactive(self, action: any_from_void, activable: IActivable):
+        self.add_action(action, activable.is_inactive)
+
+    def add_action(self, action: any_from_void, when: bool_from_void = None, when_params: Iterable[Parameter] = None, when_no_params: Iterable[Parameter] = None) -> None:
         when = when or (lambda: True)
+        if when_params:
+            when_1 = when
+            when = lambda: when_1() and all(param in self._used_params for param in when_params)
+        if when_no_params:
+            when_2 = when
+            when = lambda: when_2() and not any(param in self._used_params for param in when_no_params)
         self._actions.setdefault(when, SmartList())
         self._actions[when] += action
 
@@ -716,9 +750,11 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
     def _get_resetable(self) -> set[IResetable]:
         return {self._storage}
 
-    def set_limit(self, limit: int | None, *, storage: CliCollection = None) -> None:
+    def set_limit(self, limit: int | None, *, storage: CliCollection = None, lower_limit=-1) -> None:
         if storage is not None:
             self.set_storage(storage)
+        if lower_limit != -1:
+            self.set_lower_limit(lower_limit)
         self._limit = limit
         if self._has_own_storage:
             self._storage.set_limit(limit)
@@ -726,7 +762,17 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
     def get_limit(self) -> int:
         return self._limit
 
-    def is_multi_parameter(self):
+    def set_to_multi_at_least_zero(self):
+        self.set_to_multi(0)
+
+    def set_to_multi_at_least_one(self):
+        self.set_to_multi(1)
+
+    def set_to_multi(self, min):
+        self.set_limit(None)
+        self.set_lower_limit(min)
+
+    def is_multi(self):
         return self._limit is None or self._limit > 1
 
     def set_lower_limit(self, limit: int | None):
