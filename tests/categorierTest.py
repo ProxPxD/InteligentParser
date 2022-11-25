@@ -1,3 +1,5 @@
+from parameterized import parameterized
+
 from smartcli.cli import Cli
 from smartcli.nodes.node import Parameter
 from tests.abstractTest import AbstractTest
@@ -42,21 +44,21 @@ class CategorierTest(AbstractTest):
         search_node.set_params(operand_param, categories)
         rename_node.set_params(operand_param, id_or_name_param, 'new_name')
 
-        self.is_idea_str = '; is idea'
-        self.is_cat_str = '; is category'
-        self.is_descr_str = '; is description'
+        self.is_str = {'idea': '; is idea',
+                       'cat': '; is category',
+                       'descr': '; is description'}
 
         op_on_str = '{op} {id} {name}'
         op_with_cats = op_on_str + '; cats: {cats}'
         add_str = op_with_cats.replace('{op}', 'add') + '; descr: {descr}'
 
-        add_idea_str = add_str + self.is_idea_str
-        add_cat_str = add_str + self.is_cat_str
-        add_descr_str = add_str + '; to: {}' + self.is_descr_str
+        add_idea_str = add_str + self.is_str['idea']
+        add_cat_str = add_str + self.is_str['cat']
+        add_descr_str = add_str + '; to: {to}' + self.is_str['descr']
 
         add_idea_str_func = lambda: add_idea_str.format(id=operands.get(), name=id_or_name_param.get(), cats=categories.get_plain(), descr=descriptions.get_plain())
-        add_cat_str_func = lambda: add_cat_str.format(operands.get(), id_or_name_param.get(), categories.get_plain(), descriptions.get_plain())
-        add_descr_str_func = lambda: add_descr_str.format(operands. get_nth(0), id_or_name_param.get(), categories.get_plain(), descriptions.get_plain(), operands.get_nth(1) if len(operands.get()) > 1 else 'Not specified')
+        add_cat_str_func = lambda: add_cat_str.format(id=operands.get(), name=id_or_name_param.get(), cats=categories.get_plain(), descr=descriptions.get_plain())
+        add_descr_str_func = lambda: add_descr_str.format(id=operands.get_nth(0), name=id_or_name_param.get(), cats=categories.get_plain(), descr=descriptions.get_plain(), to=operands.get_nth(1) if len(operands.get_plain()) > 1 else '')
 
         add_node.add_action_when_storables_have_values(add_idea_str_func, operand_param, 'idea')
         add_node.add_action_when_storables_have_values(add_cat_str_func, operand_param, 'cat')
@@ -64,49 +66,72 @@ class CategorierTest(AbstractTest):
 
         return self.cli
 
-    def test_add_empty_idea(self):
+    @parameterized.expand([('idea', ),
+                           ('cat', ),
+                           ('descr', ),
+                           ])
+    def test_add_empty(self, type: str, ):
         cli = self.create_correct_cli()
         name = 'test'
 
-        results = cli.parse(f'mem add idea {name}')
+        results = cli.parse(f'mem add {type} {name}')
         res = results.result
 
-        self.assertIn(self.is_idea_str, res)
-        self.assertIn(f'add idea {name}', res)
+        self.assertIn(self.is_str[type], res)
+        self.assertIn(f'add {type} {name}', res)
         self.assertIn('cats: []', res)
         self.assertIn('descr: []', res)
 
-    def test_add_idea_with_categories_and_descriptions(self):
+    @parameterized.expand([('idea', True),
+                           ('cat', True),
+                           ('descr', False),
+                           ])
+    def test_add_with_categories_and_descriptions(self, type, with_description):
         cli = self.create_correct_cli()
         name = 'test'
         cat1, cat2, descr1, descr2 = 'cat1', 'cat2', 'description1', 'description2'
 
-        results = cli.parse(f'mem add idea {name} {cat1} {cat2} -d {descr1} {descr2}')
+        input = f'mem add {type} {name} {cat1} {cat2}'
+        if with_description:
+            input += f' -d {descr1} {descr2}'
+            descr_to_find = str([descr1, descr2])
+        else:
+            descr_to_find = str([])
+
+        results = cli.parse(input)
         res = results.result
 
-        self.assertIn(self.is_idea_str, res)
-        self.assertIn(f'add idea {name}', res)
+        self.assertIn(self.is_str[type], res)
+        self.assertIn(f'add {type} {name}', res)
         self.assertIn(f'cats: {[cat1, cat2]}', res)
-        self.assertIn(f'descr: {[descr1, descr2]}', res)
+        self.assertIn(f'descr: {descr_to_find}', res)
 
-    def test_add_idea_with_to(self):
+    @parameterized.expand([('idea', ),
+                           ('cat', ),
+                           ('descr', ),
+                           ])
+    def test_add_with_to(self, type: str):
         cli = self.create_correct_cli()
         name = 'test'
 
-        results = cli.parse(f'mem add {name} to idea')
+        results = cli.parse(f'mem add {name} to {type}')
         res = results.result
 
-        self.assertIn(self.is_idea_str, res)
-        self.assertIn(f'add idea {name}', res)
+        self.assertIn(self.is_str[type], res)
+        self.assertIn(f'add {type} {name}', res)
 
-    def test_add_idea_with_to_and_categories(self):
+    @parameterized.expand([('idea',),
+                           ('cat',),
+                           ('descr',),
+                           ])
+    def test_add_idea_with_to_and_categories(self, type):
         cli = self.create_correct_cli()
         name = 'test'
         cat1, cat2 = 'cat1', 'cat2'
 
-        results = cli.parse(f'mem add {name} {cat1} {cat2} to idea')
+        results = cli.parse(f'mem add {name} {cat1} {cat2} to {type}')
         res = results.result
 
-        self.assertIn(self.is_idea_str, res)
-        self.assertIn(f'add idea {name}', res)
+        self.assertIn(self.is_str[type], res)
+        self.assertIn(f'add {type} {name}', res)
         self.assertIn(f'cats: {[cat1, cat2]}', res)
