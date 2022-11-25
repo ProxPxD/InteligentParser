@@ -21,7 +21,7 @@ class SmartList(list):
 
     def filter_out(self, elems) -> list:
         self.__iadd__(elems)
-        return [elem for elem in elems if elem not in self]
+        return list(filter(lambda e: e not in self, elems))
 
     def get_limit(self):
         return self._limit

@@ -183,13 +183,10 @@ class FlagManagerMixin:
         else:
             return [flag for flag in self._flags if any(name in flag_names for name in flag.get_all_names())]
 
-    def add_flag(self, main: str | Flag, *alternative_names: str, storage: CliCollection = None, storage_limit=0, flag_limit=None, default=None) -> Flag:
-        name, flag = get_name_and_object_for_namable(main, Flag)
-        if self.has_flag(name):
-            raise ValueAlreadyExistsError(Flag, name)
-        flag.add_alternative_names(*alternative_names)
-        flag.set_storage(storage if storage is not None else CliCollection(storage_limit, default=default))
-        flag.set_limit(flag_limit)
+    def add_flag(self, main: str | Flag, *alternative_names: str, storage: CliCollection = None, storage_limit: int = -1, storage_lower_limit=-1, default: default_type = None, flag_limit=-1, flag_lower_limit=-1) -> Flag:
+        flag = main if isinstance(main, Flag) else Flag(main, *alternative_names, storage=storage, storage_limit=storage_limit,
+                                                        storage_lower_limit=storage_lower_limit, flag_limit=flag_limit, default=default,
+                                                        flag_lower_limit=flag_lower_limit)
         self._flags.append(flag)
         return flag
 
@@ -227,6 +224,7 @@ class ParameterManagerMixin(IResetable):
         self._defaults_order: list[str] = []
         self._disabled_orders: list[int] = []
         self._used_params: list[Parameter] = []
+        self._arg_count: int | None = None
         if parameters:
             self.set_params(*parameters, storages=storages)
 
@@ -773,7 +771,16 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
         self.set_lower_limit(min)
 
     def is_multi(self):
-        return self._limit is None or self._limit > 1
+        return self.is_limitless() or self._limit > 1
+
+    def is_limitless(self):
+        return self._limit is None
+
+    def is_limited(self):
+        return self._limit is not None
+
+    def _get_free_space(self):
+        return self._limit - len(self._storage) if self.is_limited() else None
 
     def set_lower_limit(self, limit: int | None):
         self._lower_limit = limit or 0
@@ -801,8 +808,11 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
     def add_to_values(self, to_add) -> list[str]:
         if isinstance(to_add, str) or not isinstance(to_add, Iterable):
             to_add = [to_add]
-        casted = self._map_to_type(to_add)
-        rest = self._storage.filter_out(casted)
+        to_add = list(to_add)
+        free = self._get_free_space()
+        truncated, rest = to_add[:free], to_add[free:] #islice(to_add, self._get_free_space())
+        casted = self._map_to_type(truncated)
+        rest += self._storage.filter_out(casted)
         return rest
 
     def _map_to_type(self, to_cast: Iterable):
@@ -886,9 +896,10 @@ class Parameter(FinalNode, ConditionalActionActivation):
 class Flag(FinalNode, ImplicitActionActivation):
 
     def __init__(self, name, *alternative_names: str, storage: CliCollection = None, storage_limit: int = -1, storage_lower_limit=-1, default: default_type = None, flag_limit=-1, flag_lower_limit=-1):
+        if storage_limit == -1:
+            storage_limit = 0
         if flag_limit == -1:
-            limit = storage.get_limit() if storage is not None else storage_limit
-            flag_limit = limit if limit != -1 else None
+            flag_limit = storage.get_limit() if storage is not None else storage_limit
 
         super().__init__(name, storage=storage, storage_limit=storage_limit, storage_lower_limit=storage_lower_limit, default=default, local_limit=flag_limit, local_lower_limit=flag_lower_limit, activated=False)
         self._alternative_names = set(alternative_names)

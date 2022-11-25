@@ -1,5 +1,4 @@
 import operator as op
-import unittest
 from functools import reduce
 
 from parameterized import parameterized
@@ -80,20 +79,26 @@ class SelectingParametersMethodsTest(AbstractTest):
         first, second, third = root.get_params('first', 'second', 'third')
         third.set_default('')
         second.set_default('')
-        fall_start = root.add_flag('fall-start')
+        fall_start = root.add_flag('no-start')
         fall_start.when_active_turn_off(second)
 
         root.add_action(lambda: f'1st: {first.get()}, 2nd: {second.get()}, 3rd: {third.get()}', when_params=(first,))
-        root.add_action(lambda: f'last:{third.get()}, last but 1: {second.get()}', when_no_params=(first,))
+        root.add_action(lambda: f'last: {third.get()}, last but 1: {second.get()}', when_no_params=(first,))
 
         return self.cli
 
-    @unittest.skip('Implement after practising actions with args given as arguments')
-    def test_desactivated_params_with_orders_using_default_params(self):
+    # Cases are probably covered by other tests, but it should remain for a case if the logic changed. It also turned out to be useful in detecting
+    # Parameter parsing problem of a flag
+    @parameterized.expand([('base_case', '1st: a, 2nd: b, 3rd: c', 'order a b c'),  # '1st: {}, 2nd: {}, 3rd: {}'
+                           ('', 'last: c, last but 1: b', 'order no-start b c'),   # 'last: {}, last but 1: {}'
+                           ])
+    def test_desactivated_params_with_orders_using_default_params(self, name, expected, input):
         '''
         desactivated_params proceed defaults thus the order without them should be used with the defualt one. Check: param count has a desactivated param
         '''
-        self.fail('Not implemented yet')
+        cli = self.create_desactivated_params_with_orders_using_default_params_cli()
+        output = cli.parse(input)
+        self.assertEqual(expected, output.result)
 
     def create_variable_params_with_defaults_cli(self):
         self.cli = Cli()
