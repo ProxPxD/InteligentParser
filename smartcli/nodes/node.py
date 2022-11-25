@@ -683,6 +683,10 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
     def get_lower_limit(self) -> int:
         return self._lower_limit
 
+
+    def get_nth(self, n: int):
+        return self.get_plain()[n]
+
     def get(self) -> Any:
         '''
         :return: As get plain but if the collection has length of 1 gets the only element of it
@@ -702,9 +706,6 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
         elif not isinstance(to_return, Sized) and self._lower_limit > 1:
             raise IncorrectArity(1, f'> {self._lower_limit}')
         return to_return
-
-    def get_nth(self, n: int):
-        return self.get()[n]
 
     def has(self, elem: any):
         return elem in self
@@ -858,6 +859,9 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
 
     def is_default_set(self) -> bool:
         return self._storage.is_default_set()
+
+    def get_nth(self, n: int):
+        return self._storage.get_nth(n)
 
     def get(self) -> Any:
         '''

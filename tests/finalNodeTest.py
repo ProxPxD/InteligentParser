@@ -46,10 +46,10 @@ class FinalNodeTest(AbstractTest):
         final_node.add_to_values(to_add)
         self.assertEqual(expected, getter(final_node))
 
-    @parameterized.expand([(IncorrectArity, ['added'], Parameter('10', storage=CliCollection(upper_limit=2), parameter_lower_limit=2), FinalNode.get_plain),
-                           (IncorrectArity, ['added'], Parameter('11', storage=CliCollection(upper_limit=2), parameter_lower_limit=2), FinalNode.get),
-                           (IncorrectArity, ['added'], Flag('12', storage=CliCollection(lower_limit=2, upper_limit=None)), FinalNode.get_plain),
-                           (IncorrectArity, ['added'], Flag('13', storage=CliCollection(lower_limit=2, upper_limit=None)), FinalNode.get),
+    @parameterized.expand([(IncorrectArity, ['added'], Parameter('0', storage=CliCollection(upper_limit=2), parameter_lower_limit=2), FinalNode.get_plain),
+                           (IncorrectArity, ['added'], Parameter('1', storage=CliCollection(upper_limit=2), parameter_lower_limit=2), FinalNode.get),
+                           (IncorrectArity, ['added'], Flag('2', storage=CliCollection(lower_limit=2, upper_limit=None)), FinalNode.get_plain),
+                           (IncorrectArity, ['added'], Flag('3', storage=CliCollection(lower_limit=2, upper_limit=None)), FinalNode.get),
                             ],
                           name_func=name_get_tests)
     def test_raises_when_get(self, expected_exception, to_add, final_node: FinalNode, getter):
@@ -90,3 +90,9 @@ class FinalNodeTest(AbstractTest):
 
     def test_type_casting(self):
         self.run_current_test_with_params()
+
+    def test_string_as_return_type(self):
+        param = Parameter('test', storage_limit=2)
+        param.add_to_values('abc')
+        self.assertEqual('abc', param.get())
+        self.assertEqual('abc', param.get_nth(0))
