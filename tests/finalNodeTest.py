@@ -9,7 +9,7 @@ from tests.abstractTest import AbstractTest
 class FinalNodeTest(AbstractTest):
 
     @staticmethod
-    def name_add_and_get(method, param_num, param):
+    def name_get_tests(method, param_num, param):
         args: tuple = param.args
         to_add = args[1] if not isinstance(args[1], str) else [args[1]]
         final_node = args[2]
@@ -27,8 +27,6 @@ class FinalNodeTest(AbstractTest):
             base += '_with_limit_' + str(object_limit)
         if is_other_than_to_add_length(storage_limit):
             base += '_with_storage_limit_' + str(storage_limit)
-        if len(args) > 4 and args[4] is not None:
-            base += '_should_raise'
 
         return base
 
@@ -42,23 +40,25 @@ class FinalNodeTest(AbstractTest):
                            (['added1', 'added2'], ['added1', 'added2'], Parameter('7', storage_limit=2), FinalNode.get),
                            (['added1'], ['added1', 'added2'], Parameter('8', storage=CliCollection(upper_limit=2), parameter_limit=1), FinalNode.get_plain),
                            ('added1', ['added1', 'added2'], Parameter('9', storage=CliCollection(upper_limit=2), parameter_limit=1), FinalNode.get),
-
-                           (None, ['added'], Parameter('10', storage=CliCollection(upper_limit=2), parameter_lower_limit=2), FinalNode.get_plain, IncorrectArity),
-                           (None, ['added'], Parameter('11', storage=CliCollection(upper_limit=2), parameter_lower_limit=2), FinalNode.get, IncorrectArity),
-                           (None, ['added'], Flag('12', storage=CliCollection(lower_limit=2, upper_limit=None)), FinalNode.get_plain, IncorrectArity),
-                           (None, ['added'], Flag('13', storage=CliCollection(lower_limit=2, upper_limit=None)), FinalNode.get, IncorrectArity),
                            ],
-                          name_func=name_add_and_get)
-    def test_add_and_get(self, expected, to_add, final_node: FinalNode, getter, expected_exception=None):
+                          name_func=name_get_tests)
+    def test_add_and_get(self, expected, to_add, final_node: FinalNode, getter):
         final_node.add_to_values(to_add)
-        if not expected_exception:
-            self.assertEqual(expected, getter(final_node))
-        else:
-            with self.assertRaises(expected_exception):
-                getter(final_node)
+        self.assertEqual(expected, getter(final_node))
+
+    @parameterized.expand([(IncorrectArity, ['added'], Parameter('10', storage=CliCollection(upper_limit=2), parameter_lower_limit=2), FinalNode.get_plain),
+                           (IncorrectArity, ['added'], Parameter('11', storage=CliCollection(upper_limit=2), parameter_lower_limit=2), FinalNode.get),
+                           (IncorrectArity, ['added'], Flag('12', storage=CliCollection(lower_limit=2, upper_limit=None)), FinalNode.get_plain),
+                           (IncorrectArity, ['added'], Flag('13', storage=CliCollection(lower_limit=2, upper_limit=None)), FinalNode.get),
+                            ],
+                          name_func=name_get_tests)
+    def test_raises_when_get(self, expected_exception, to_add, final_node: FinalNode, getter):
+        final_node.add_to_values(to_add)
+        with self.assertRaises(expected_exception):
+            getter(final_node)
 
     def test_add_and_get(self):
-        self.run_current_test_with_params()#*list(range(10, 14)))
+        self.run_current_test_with_params()
 
     @parameterized.expand([('plain', ['xD'], 'xD', Parameter(''), FinalNode.get_plain, CliCollection()),
                            ('get', 'xD', 'xD', Parameter(''), FinalNode.get, CliCollection()),
@@ -89,4 +89,4 @@ class FinalNodeTest(AbstractTest):
                 final_node.get_plain()
 
     def test_type_casting(self):
-        self.run_current_test_with_params(2, 5)
+        self.run_current_test_with_params()
