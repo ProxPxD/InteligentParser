@@ -183,8 +183,11 @@ class FlagManagerMixin:
         else:
             return [flag for flag in self._flags if any(name in flag_names for name in flag.get_all_names())]
 
-    def add_flag(self, main: str | Flag, *alternative_names: str, storage: CliCollection = None, storage_limit: int = -1, storage_lower_limit=-1, default: default_type = None, flag_limit=-1, flag_lower_limit=-1) -> Flag:
-        flag = main if isinstance(main, Flag) else Flag(main, *alternative_names, storage=storage, storage_limit=storage_limit,
+    def add_flag(self, main: str | Flag, *alternative_names: str, storage: CliCollection = None, storage_limit: int | None = -1, storage_lower_limit=-1, default: default_type = None, flag_limit=-1, flag_lower_limit=-1) -> Flag:
+        name = get_name(main)
+        if self.has_flag(name):
+            raise ValueAlreadyExistsError(Flag, name)
+        flag = main if isinstance(main, Flag) else Flag(name, *alternative_names, storage=storage, storage_limit=storage_limit,
                                                         storage_lower_limit=storage_lower_limit, flag_limit=flag_limit, default=default,
                                                         flag_lower_limit=flag_lower_limit)
         self._flags.append(flag)
@@ -808,12 +811,16 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
     def add_to_values(self, to_add) -> list[str]:
         if isinstance(to_add, str) or not isinstance(to_add, Iterable):
             to_add = [to_add]
-        to_add = list(to_add)
-        free = self._get_free_space()
-        truncated, rest = to_add[:free], to_add[free:] #islice(to_add, self._get_free_space())
+        truncated, rest = self._split_addable(list(to_add))
         casted = self._map_to_type(truncated)
         rest += self._storage.filter_out(casted)
         return rest
+
+    def _split_addable(self, to_add: list):
+        if self.is_limited():
+            free = self._get_free_space()
+            return to_add[:free], to_add[free:]
+        return to_add, []
 
     def _map_to_type(self, to_cast: Iterable):
         if not self.type:
@@ -896,10 +903,9 @@ class Parameter(FinalNode, ConditionalActionActivation):
 class Flag(FinalNode, ImplicitActionActivation):
 
     def __init__(self, name, *alternative_names: str, storage: CliCollection = None, storage_limit: int = -1, storage_lower_limit=-1, default: default_type = None, flag_limit=-1, flag_lower_limit=-1):
-        if storage_limit == -1:
-            storage_limit = 0
         if flag_limit == -1:
-            flag_limit = storage.get_limit() if storage is not None else storage_limit
+            limit = storage.get_limit() if storage is not None else storage_limit
+            flag_limit = limit if limit != -1 else 0
 
         super().__init__(name, storage=storage, storage_limit=storage_limit, storage_lower_limit=storage_lower_limit, default=default, local_limit=flag_limit, local_lower_limit=flag_lower_limit, activated=False)
         self._alternative_names = set(alternative_names)

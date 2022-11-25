@@ -77,4 +77,4 @@ class NodeTest(AbstractTest):
             adder(node, 'same')
 
     def test_already_existing(self):
-        self.run_current_test_with_params(2)
+        self.run_current_test_with_params()
