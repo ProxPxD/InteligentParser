@@ -35,7 +35,7 @@ class CategorierTest(AbstractTest):
         # add (idea|cat|descr)* <NAME> (CAT...) ({to <idea|cat>})* ({-d < DESCR >})
         # del (idea|cat|descr)* < NAME | NUM > ({from <idea|cat>}) *
         # show (idea|cat)* (NAME | NUM)({from <idea|cat>}) ({from < idea | cat >}) *
-        # search (idea|cat)* < cat... > ({ in < idea | cat >}) * ({by < descr | name >})
+        # search (idea|cat)* < cat... > ({ in < idea | cat >}) * ({by < cat| descr | name >})
         # rename (idea|cat)* < NAME > < NEW_NAME > ({ in < idea | cat >}) *
 
         add_node.set_params(operand_param, id_or_name_param, categories)

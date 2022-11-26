@@ -244,10 +244,9 @@ class ParameterManagerMixin(IResetable):
     def get_params(self, *param_names: str) -> tuple[Parameter, ...]:
         if not param_names:
             return tuple(self._params.values())
-        else:
-            if ' ' in param_names[0]:
-                param_names = shlex.split(param_names[0])
-            return tuple(self.get_param(name) for name in param_names)
+        if ' ' in param_names[0]:
+            param_names = shlex.split(param_names[0])
+        return tuple(self.get_param(name) for name in param_names)
 
     def set_params(self, *parameters: str | CliCollection | Parameter, storages: tuple[CliCollection, ...] = ()) -> None:
         self._set_lacking_params(*parameters)
@@ -286,18 +285,6 @@ class ParameterManagerMixin(IResetable):
 
     def disable_order(self, num: int):
         self._disabled_orders.append(num)
-
-    def _get_disabled_orders(self) -> list[int]:
-        return self._disabled_orders
-
-    def get_optional_params(self) -> Iterator[Parameter]:
-        return (param for param in self._params.values() if param.is_default_set() or param.is_inactive() or not param.has_lower_limit())
-
-    def _get_optional_params_count(self):
-        return len(list(self.get_optional_params()))
-
-    def _get_obligatory_params_count(self):
-        return len(self._params) - self._get_optional_params_count()
 
     def set_default_setting_order(self, *params: str | Parameter, defaults: list[Any] = None):
         defaults = defaults or []
@@ -377,8 +364,7 @@ class ParameterManagerMixin(IResetable):
         return chain(must_be_skipped, needed_to_skip)
 
     def _get_param_names_that_must_be_skipped(self, from_order: list[str]) -> Iterable[str]:
-        desactivated = filter(lambda p: self.get_param(p).is_inactive(), from_order)
-        return desactivated
+        return filter(lambda p: self.get_param(p).is_inactive(), from_order)
 
     def _get_param_names_that_can_be_skipped(self, params_to_check: list[str]) -> Iterable[str]:
         prioritized_defaults = filter(params_to_check.__contains__, self._defaults_order)
@@ -887,9 +873,6 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
         return to_return
 
 
-default_type = str | int | list[str | int] | None
-
-
 class Parameter(FinalNode, ConditionalActionActivation):
 
     def __init__(self, name: str, *, storage: CliCollection = None, storage_limit: int | None = -1, storage_lower_limit: int | None = -1,
@@ -928,6 +911,7 @@ class Flag(FinalNode, ImplicitActionActivation):
         return [self._name] + list(self._alternative_names)
 
 
+default_type = str | int | list[str | int] | None
 stored_type = Node | Flag | Parameter | HiddenNode | VisibleNode | CliCollection
 
 
