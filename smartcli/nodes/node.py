@@ -9,6 +9,7 @@ from typing import Iterator, Callable, Iterable, Any, TypeVar, Type, Sized
 from more_itertools import unique_everseen
 
 from smartcli.exceptions import ParsingException, ValueAlreadyExistsError, IncorrectStateError, IncorrectArity
+from smartcli.nodes.help import IHelp, Help, HelpType
 from smartcli.nodes.interfaces import INamable, IResetable, compositeActive, active, bool_from_iterable, bool_from_void, any_from_void, any_from_str
 from smartcli.nodes.smartList import SmartList
 from smartcli.nodes.storages import IActivable, DefaultStorage, IDefaultStorable
@@ -452,15 +453,33 @@ class HiddenNodeManagerMixin:
 #############
 
 
-class Node(INamable, ParameterManagerMixin, IResetable, ActionOnActivationMixin, FlagManagerMixin, HiddenNodeManagerMixin):
+class Node(INamable, ParameterManagerMixin, IResetable, ActionOnActivationMixin, FlagManagerMixin, HiddenNodeManagerMixin, IHelp):
 
-    def __init__(self, name: str, parameters: Iterable[str | Parameter] = None, param_storages: tuple[CliCollection] = (), **kwargs):
+    def __init__(self, name: str, parameters: Iterable[str | Parameter] = None, param_storages: tuple[CliCollection] = (),
+                 short_description: str = '', long_description: str = '', **kwargs):
         super().__init__(name=name, parameters=parameters, param_storages=param_storages, **kwargs)
         self._visible_nodes: dict[str, VisibleNode] = dict()
         self._collections: dict[str, CliCollection] = dict()
         self._actions: dict[bool_from_void, SmartList[any_from_void]] = dict()
         self._action_results: list = []
         self._only_hidden = False
+        self._help = Help(short_description, long_description)
+
+    # Help
+
+    def get_help(self) -> Help:
+        return self._help
+
+    def get_sub_helps(self) -> dict[HelpType, list[IHelp]]:
+        return {
+            HelpType.NODE: self.get_visible_nodes(),
+            HelpType.PARAMETER: self.get_params(),
+            HelpType.FLAG: self.get_flags(),
+            HelpType.HIDDEN_NODES: self.get_hidden_nodes(),
+        }
+
+    def _get_help_naming(self) -> Iterable[str] | str:
+        return self.get_name()
 
     # Resetable
 
@@ -544,7 +563,7 @@ class Node(INamable, ParameterManagerMixin, IResetable, ActionOnActivationMixin,
     def get_visible_node(self, name: str):
         return self._visible_nodes[name]
 
-    def get_visible_nodes(self, *names: str) -> list[Node]:
+    def get_visible_nodes(self, *names: str) -> list[VisibleNode]:
         if not names:
             return list(self._visible_nodes.values())
         else:
@@ -709,10 +728,11 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
         return hash(tuple(self))
 
 
-class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
+class FinalNode(IDefaultStorable, INamable, IResetable, IHelp, ABC):
 
     def __init__(self, name: str, *, storage: CliCollection = None, storage_limit: int | None = -1, storage_lower_limit: int | None = -1,
-                 default: default_type = None, type: Callable = None, local_limit=-1, local_lower_limit=-1, **kwargs):
+                 default: default_type = None, type: Callable = None, local_limit=-1, local_lower_limit=-1,
+                 short_description: str = '', long_description: str = '', **kwargs):
         super().__init__(name=name, **kwargs)
 
         if storage is not None and storage_limit != -1:
@@ -726,11 +746,25 @@ class FinalNode(IDefaultStorable, INamable, IResetable, ABC):
         self.set_lower_limit(local_lower_limit)
         self._has_own_storage = False
         self._storage = None
+        self._help = Help(short_description, long_description)
 
         if storage is None:
             storage = CliCollection(upper_limit=storage_limit, lower_limit=storage_lower_limit, default=default, type=type)
             self._has_own_storage = True
         self.set_storage(storage)
+
+    # Help
+
+    def get_help(self) -> Help:
+        return self._help
+
+    def get_sub_helps(self) -> dict[HelpType, list[IHelp]]:
+        return dict()
+
+    def _get_help_naming(self) -> Iterable[str] | str:
+        return self.get_name()
+
+    # Reset
 
     def reset(self):
         pass
@@ -897,6 +931,13 @@ class Flag(FinalNode, ImplicitActionActivation):
         super().__init__(name, storage=storage, storage_limit=storage_limit, storage_lower_limit=storage_lower_limit, default=default, local_limit=flag_limit, local_lower_limit=flag_lower_limit, activated=False)
         self._alternative_names = set(alternative_names)
         self._on_activation: SmartList[Callable] = SmartList()
+
+    # Help
+
+    def _get_help_naming(self) -> Iterable[str] | str:
+        return self.get_all_names()
+
+    # Reset
 
     def reset(self):
         self.deactivate()
