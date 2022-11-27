@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import operator as op
 from abc import ABC, abstractmethod
+from functools import reduce
 from typing import Iterable
+
+from more_itertools import chunked
 
 
 #################
 # Help Building #
 #################
+
 
 class HelpRoot:
 
@@ -18,23 +23,64 @@ class HelpManager(HelpRoot):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._header = HeaderBuilder(self._root)
-        self._synopsis = SynopsisBuilder(self._root)
-        self._description = DescriptionBuilder(self._root)
-        self._visible_nodes_section = VisibleNodesSectionBuilder(self._root)
-        self._hidden_nodes_section = HiddenNodesSectionBuilder(self._root)
-        self._parameters_section = ParametersSectionBuilder(self._root)
-        self._flags_section = FlagsSectionBuilder(self._root)
+        sections = [HeaderBuilder,
+                    SynopsisBuilder,
+                    DescriptionBuilder,
+                    ParametersSectionBuilder,
+                    FlagsSectionBuilder,
+                    VisibleNodesSectionBuilder,
+                    HiddenNodesSectionBuilder,
+                    ParametersSectionBuilder,
+        ]
+        self._sections = list(map(lambda s: s(self._root), sections))
         self._content: list = []
 
     def _build_help(self) -> list:
-        self._content += self._header.build()
-        self._content += self._description.build()
-        self._content += self._visible_nodes_section.build()
-        self._content += self._hidden_nodes_section.build()
-        self._content += self._flags_section.build()
-        self._content += self._parameters_section.build()
+        self._content = list(reduce(op.add, map(SectionBuilder.build, self._sections)))
         return self._content
+
+
+class HelpFormatter:
+
+    def __init__(self):
+        self._space = ' '
+        self._big_space_width = 7
+        self._small_space_width = 3
+        self._max_width = 1000
+        self._section_separator = '\n\n'
+        self._option_separator = '\n\n'
+
+    def format(self, to_format: list | str, depth=0) -> str:
+        if isinstance(to_format, list):
+            return self._format_list(to_format, depth+1)
+        elif isinstance(to_format, str):
+            return self._format_str(to_format, depth)
+
+        raise ValueError
+
+    def _format_list(self, to_format: list, depth: int) -> str:
+        sep = self._get_separator(depth)
+        more_depth = depth + 1
+        formatted = map(lambda part: self.format(part, more_depth), to_format)
+        merged = reduce(lambda a, b: f'{a}{sep}{b}', formatted)
+        return merged
+
+    def _format_str(self, to_format: str, depth: int) -> str:
+        space_length = self._get_space_length(depth)
+        text_length = self._max_width - space_length
+        lines = map(''.join, chunked(to_format, text_length))
+        indent = self._space * space_length
+        indented_lines = map(lambda line: indent + line, lines)
+        return '\n'.join(indented_lines)
+
+    def _get_space_length(self, depth: int):
+        big, small = self._big_space_width, self._small_space_width
+        return big + (small * (depth-1))
+
+    def _get_separator(self, depth: int):
+        if depth == 0:
+            return self._section_separator
+        return self._option_separator
 
 
 class SectionBuilder(ABC):
@@ -104,6 +150,12 @@ class SubHelpBuilder(HelpRoot, SectionBuilder, ABC):
         return [sub_help.help.short_description]
 
 
+class ParametersSectionBuilder(SubHelpBuilder):
+
+    def get_section_name(self) -> str:
+        return 'Parameters'
+
+
 class VisibleNodesSectionBuilder(SubHelpBuilder):
 
     def get_section_name(self) -> str:
@@ -114,12 +166,6 @@ class HiddenNodesSectionBuilder(SubHelpBuilder):
 
     def get_section_name(self) -> str:
         return 'Hidden Nodes'
-
-
-class ParametersSectionBuilder(SubHelpBuilder):
-
-    def get_section_name(self) -> str:
-        return 'Parameters'
 
 
 class FlagsSectionBuilder(SubHelpBuilder):
