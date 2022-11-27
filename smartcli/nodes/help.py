@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import operator as op
 from abc import ABC, abstractmethod
+from enum import Enum
 from functools import reduce
 from typing import Iterable
 
 from more_itertools import chunked
 
+
+class HelpType(Enum):
+    NODE = 'Nodes'
+    HIDDEN_NODES = 'Hidden Nodes'
+    PARAMETER = 'Parameters'
+    FLAG = 'Flags'
 
 #################
 # Help Building #
@@ -23,6 +30,7 @@ class HelpManager(HelpRoot):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self._formatter = HelpFormatter()
         sections = [HeaderBuilder,
                     SynopsisBuilder,
                     DescriptionBuilder,
@@ -33,9 +41,13 @@ class HelpManager(HelpRoot):
                     ParametersSectionBuilder,
         ]
         self._sections = list(map(lambda s: s(self._root), sections))
-        self._content: list = []
 
-    def _build_help(self) -> list:
+    def create_help_string(self):
+        content = self._build_help_content()
+        help_string = self._formatter.format(content)
+        return help_string
+
+    def _build_help_content(self) -> list:
         self._content = list(reduce(op.add, map(SectionBuilder.build, self._sections)))
         return self._content
 
@@ -151,26 +163,23 @@ class SubHelpBuilder(HelpRoot, SectionBuilder, ABC):
 
 
 class ParametersSectionBuilder(SubHelpBuilder):
-
     def get_section_name(self) -> str:
-        return 'Parameters'
+        return HelpType.PARAMETER.name
 
 
 class VisibleNodesSectionBuilder(SubHelpBuilder):
-
     def get_section_name(self) -> str:
-        return 'Nodes'
+        return HelpType.NODE.name
 
 
 class HiddenNodesSectionBuilder(SubHelpBuilder):
-
     def get_section_name(self) -> str:
-        return 'Hidden Nodes'
+        return HelpType.HIDDEN_NODES.name
 
 
 class FlagsSectionBuilder(SubHelpBuilder):
     def get_section_name(self) -> str:
-        return 'Flags'
+        return HelpType.FLAG.name
 
 
 ################
@@ -191,7 +200,7 @@ class IHelp(ABC):
         return self.get_help()
 
     @abstractmethod
-    def get_sub_helps(self) -> dict[str, list[IHelp]]:
+    def get_sub_helps(self) -> dict[HelpType, list[IHelp]]:
         raise NotImplemented
 
     @abstractmethod
