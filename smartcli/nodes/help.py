@@ -71,7 +71,7 @@ class HelpFormatter:
         raise ValueError
 
     def _format_list(self, to_format: list, depth: int) -> str:
-        sep = self._get_separator(depth)
+        sep = self._get_section_separator(depth)
         more_depth = depth + 1
         formatted = map(lambda part: self.format(part, more_depth), to_format)
         merged = reduce(lambda a, b: f'{a}{sep}{b}', formatted)
@@ -89,13 +89,16 @@ class HelpFormatter:
         big, small = self._big_space_width, self._small_space_width
         return big + (small * (depth-1))
 
-    def _get_separator(self, depth: int):
+    def _get_section_separator(self, depth: int):
         if depth == 0:
             return self._section_separator
         return self._option_separator
 
 
-class SectionBuilder(ABC):
+class SectionBuilder(HelpRoot, ABC):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def build(self) -> list:
         section = self._build_section()
@@ -112,7 +115,7 @@ class SectionBuilder(ABC):
         raise NotImplementedError
 
 
-class HeaderBuilder(HelpRoot, SectionBuilder):
+class HeaderBuilder(SectionBuilder):
 
     def get_section_name(self) -> str:
         return 'Name'
@@ -125,7 +128,7 @@ class HeaderBuilder(HelpRoot, SectionBuilder):
         return self._root.help.short_description
 
 
-class SynopsisBuilder(HelpRoot, SectionBuilder):
+class SynopsisBuilder(SectionBuilder):
 
     def get_section_name(self) -> str:
         return 'Synopsis'
@@ -134,7 +137,7 @@ class SynopsisBuilder(HelpRoot, SectionBuilder):
         return []  # TODO: implement
 
 
-class DescriptionBuilder(HelpRoot, SectionBuilder):
+class DescriptionBuilder(SectionBuilder):
 
     def get_section_name(self) -> str:
         return 'Description'
@@ -143,7 +146,7 @@ class DescriptionBuilder(HelpRoot, SectionBuilder):
         return self._root.help.long_description
 
 
-class SubHelpBuilder(HelpRoot, SectionBuilder, ABC):
+class SubHelpBuilder(SectionBuilder, ABC):
 
     def get_sub_helps(self) -> list[IHelp]:
         sub_helps = self._root.get_sub_helps()
