@@ -4,6 +4,7 @@ import shlex
 from typing import Iterator
 
 from .nodes.cli_elements import Node, Root, Parameter, HiddenNode, VisibleNode
+from .nodes.help import HelpManager
 from .nodes.interfaces import IResetable
 
 
@@ -12,10 +13,14 @@ class Cli(IResetable):
     def __init__(self, args: list[str] = None, root: Root = None, **kwargs):
         super().__init__(**kwargs)
         self._root: Root = root or Root()
+        self._help_manager = HelpManager(self._root)
         self._args: list = args or []
         self._active_nodes = []
         self._action_node: Node = None
         self._is_reset_needed = False
+
+    def print_help(self, out=print):
+        self._help_manager.print_help(out=out)
 
     def set_args(self, args: list[str]):
         if args:

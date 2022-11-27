@@ -453,7 +453,7 @@ class HiddenNodeManagerMixin:
 #############
 
 
-class Node(INamable, ParameterManagerMixin, IResetable, ActionOnActivationMixin, FlagManagerMixin, HiddenNodeManagerMixin, IHelp):
+class Node(INamable, IHelp, ParameterManagerMixin, IResetable, ActionOnActivationMixin, FlagManagerMixin, HiddenNodeManagerMixin):
 
     def __init__(self, name: str, parameters: Iterable[str | Parameter] = None, param_storages: tuple[CliCollection] = (),
                  short_description: str = '', long_description: str = '', **kwargs):
@@ -657,6 +657,9 @@ class HiddenNode(Node, ConditionalActionActivation):  # TODO: refactor to remove
 
     def __init__(self, name: str,  parameters: Iterable[str | Parameter] = None, param_storages: tuple[CliCollection] = (), active_condition: compositeActive = None, inactive_condition: compositeActive = None, **kwargs):
         super().__init__(name=name, parameters=parameters, param_storages=param_storages, active_condition=active_condition, inactive_condition=inactive_condition, **kwargs)
+
+    def _get_help_naming(self) -> Iterable[str] | str:
+        return super()._get_help_naming().capitalize()
 
 
 class Root(VisibleNode):
