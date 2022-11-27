@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import operator as op
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from enum import Enum
 from functools import reduce
+from itertools import accumulate
 from typing import Iterable
 
-from more_itertools import chunked
+from more_itertools import split_when
 
 
 class HelpType(Enum):
@@ -22,14 +24,15 @@ class HelpType(Enum):
 
 class HelpRoot:
 
-    def __init__(self, root: IHelp):
+    def __init__(self, root: IHelp, **kwargs):
+        super().__init__(**kwargs)
         self._root: IHelp = root
 
 
 class HelpManager(HelpRoot):
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, root: IHelp, **kwargs):
+        super().__init__(root=root, **kwargs)
         self._formatter = HelpFormatter()
         sections = [HeaderBuilder,
                     SynopsisBuilder,
@@ -38,73 +41,106 @@ class HelpManager(HelpRoot):
                     FlagsSectionBuilder,
                     VisibleNodesSectionBuilder,
                     HiddenNodesSectionBuilder,
-                    ParametersSectionBuilder,
         ]
         self._sections = list(map(lambda s: s(self._root), sections))
 
-    def create_help_string(self):
+    def print_help(self, out=print) -> None:
+        out(self.create_help_string())
+
+    def create_help_string(self) -> str:
         content = self._build_help_content()
         help_string = self._formatter.format(content)
         return help_string
 
     def _build_help_content(self) -> list:
-        self._content = list(reduce(op.add, map(SectionBuilder.build, self._sections)))
-        return self._content
+        is_content_empty = lambda section: section[1] and section[1][0]
+        built = map(SectionBuilder.build, self._sections)
+        not_empty = filter(is_content_empty, built)
+        joined = reduce(op.add, not_empty)
+        return joined
 
 
 class HelpFormatter:
 
     def __init__(self):
         self._space = ' '
-        self._big_space_width = 7
+        self._big_space_width = 5
         self._small_space_width = 3
-        self._max_width = 1000
-        self._section_separator = '\n\n'
-        self._option_separator = '\n\n'
+        self._max_width = 120
+        self._section_separator = '\n'
+        self._option_separator = '\n'
 
     def format(self, to_format: list | str, depth=0) -> str:
         if isinstance(to_format, list):
             return self._format_list(to_format, depth+1)
         elif isinstance(to_format, str):
-            return self._format_str(to_format, depth)
+            return self._format_long_text(to_format, depth)
 
         raise ValueError
 
     def _format_list(self, to_format: list, depth: int) -> str:
         sep = self._get_section_separator(depth)
-        more_depth = depth + 1
-        formatted = map(lambda part: self.format(part, more_depth), to_format)
-        merged = reduce(lambda a, b: f'{a}{sep}{b}', formatted)
+        prelist = [i-1 for i, elem in enumerate(to_format) if isinstance(elem, list) and elem[0]]
+        is_header = lambda i, part: i in prelist and isinstance(part, str)
+        add_colon = lambda part: part + ':'
+        add_colon_if_is_header = lambda i, part: add_colon(part) if is_header(i, part) else part
+        not_empty_formatted = (self.format(add_colon_if_is_header(i, part), depth) for i, part in enumerate(to_format) if part and part[0])
+        merged = self._lines_to_str(list(not_empty_formatted), sep)
         return merged
 
-    def _format_str(self, to_format: str, depth: int) -> str:
+    def _format_long_text(self, to_format: str, depth: int) -> str:
+        paragraphs = to_format.split('\n')
+        formatted = map(lambda p: self._format_paragraph(p, depth), paragraphs)
+        return '\n'.join(list(formatted))
+
+    def _format_paragraph(self, paragraph: str, depth: int) -> str:
+        if not paragraph:
+            return ''
         space_length = self._get_space_length(depth)
-        text_length = self._max_width - space_length
-        lines = map(''.join, chunked(to_format, text_length))
-        indent = self._space * space_length
+        line_max = self._max_width - space_length
+        mod_max = lambda a: a // line_max
+        is_line_bound = lambda p1, p2: mod_max(p1[0]) != mod_max(p2[0])
+        indent = ' ' * space_length
+
+        words = paragraph.split(' ')
+        lens_words = map(lambda w: (len(w) + 1, w), words)  # +1 for space
+        with_position = accumulate(lens_words, lambda acc, elem: (acc[0] + elem[0], elem[1]), initial=(0, ''))
+        next(with_position, None)
+        lens_lines = split_when(with_position, is_line_bound)
+        lines = map(lambda line: ' '.join(list(map(lambda pair: pair[1], line))), lens_lines)
         indented_lines = map(lambda line: indent + line, lines)
-        return '\n'.join(indented_lines)
+        return '\n'.join(list(indented_lines))
+
+    def _lines_to_str(self, lines: list, sep='\n'):
+        length = len(lines)
+        if length > 1:
+            return sep.join(lines)
+        if length > 0:
+            return lines[0]
+        return ''
 
     def _get_space_length(self, depth: int):
         big, small = self._big_space_width, self._small_space_width
-        return big + (small * (depth-1))
+        if depth <= 1:
+            return 0
+        return big + (small * (depth-2))
 
     def _get_section_separator(self, depth: int):
-        if depth == 0:
+        if depth == 2:
             return self._section_separator
         return self._option_separator
 
 
 class SectionBuilder(HelpRoot, ABC):
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, root, **kwargs):
+        super().__init__(root=root, **kwargs)
 
     def build(self) -> list:
         section = self._build_section()
         if isinstance(section, str):
             section = [section]
-        return [self.get_section_name(), list(section)]
+        return [self.get_section_name().upper(), list(section)]
 
     @abstractmethod
     def get_section_name(self) -> str:
@@ -121,8 +157,7 @@ class HeaderBuilder(SectionBuilder):
         return 'Name'
 
     def _build_section(self) -> list:
-        return [self._root.get_help_naming_string(),
-                self.get_header_description_string()]
+        return [f'{self._root.get_help_naming_string()} - {self.get_header_description_string()}']
 
     def get_header_description_string(self) -> str:
         return self._root.help.short_description
@@ -150,39 +185,40 @@ class SubHelpBuilder(SectionBuilder, ABC):
 
     def get_sub_helps(self) -> list[IHelp]:
         sub_helps = self._root.get_sub_helps()
-        kind = self.get_section_name()
+        name = self.get_section_name()
+        kind = HelpType(name)
         if kind in sub_helps:
             return sub_helps[kind]
         return []
 
     def _build_section(self):
-        return list(map(self.build_single_sub_help, self.get_sub_helps()))
+        return reduce(op.add, map(self.build_single_sub_help, self.get_sub_helps()), [])
 
     def build_single_sub_help(self, sub_help: IHelp) -> list:
-        return [sub_help.get_help_naming_string(), self.build_single_sub_help_description(sub_help)]
+        return [sub_help.get_help_naming_string(), [self.build_single_sub_help_description(sub_help)]]
 
-    def build_single_sub_help_description(self, sub_help: IHelp) -> list:
-        return [sub_help.help.short_description]
+    def build_single_sub_help_description(self, sub_help: IHelp) -> str:
+        return sub_help.help.short_description
 
 
 class ParametersSectionBuilder(SubHelpBuilder):
     def get_section_name(self) -> str:
-        return HelpType.PARAMETER.name
+        return HelpType.PARAMETER.value
 
 
 class VisibleNodesSectionBuilder(SubHelpBuilder):
     def get_section_name(self) -> str:
-        return HelpType.NODE.name
+        return HelpType.NODE.value
 
 
 class HiddenNodesSectionBuilder(SubHelpBuilder):
     def get_section_name(self) -> str:
-        return HelpType.HIDDEN_NODES.name
+        return HelpType.HIDDEN_NODES.value
 
 
 class FlagsSectionBuilder(SubHelpBuilder):
     def get_section_name(self) -> str:
-        return HelpType.FLAG.name
+        return HelpType.FLAG.value
 
 
 ################
@@ -206,27 +242,18 @@ class IHelp(ABC):
     def get_sub_helps(self) -> dict[HelpType, list[IHelp]]:
         raise NotImplemented
 
-    @abstractmethod
     def _get_help_naming(self) -> Iterable[str] | str:
-        raise NotImplemented
+        raise NameError
 
     def get_help_naming_string(self):
-        naming = self._root.get_help_naming()
-        if isinstance(naming, Iterable):
+        naming = self.help.name or self._get_help_naming()
+        if not isinstance(naming, str):
             naming = str(list(naming))[1:-2]
         return naming
 
 
+@dataclass
 class Help:
-
-    def __init__(self, short_description: str, long_description: str = ''):
-        self._short_description = short_description
-        self._long_description = long_description
-
-    @property
-    def short_description(self):
-        return self._short_description
-
-    @property
-    def long_description(self):
-        return self._long_description
+    name: str = ''
+    short_description: str = ''
+    long_description: str = ''
