@@ -1,7 +1,7 @@
 from parameterized import parameterized
 
 from smartcli.cli import Cli
-from smartcli.nodes.node import Parameter
+from smartcli.nodes.cli_elements import Parameter
 from tests.abstractTest import AbstractTest
 
 

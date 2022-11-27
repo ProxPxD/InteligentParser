@@ -3,8 +3,8 @@ from __future__ import annotations
 import shlex
 from typing import Iterator
 
+from .nodes.cli_elements import Node, Root, Parameter, HiddenNode, VisibleNode
 from .nodes.interfaces import IResetable
-from .nodes.node import Node, Root, Parameter, HiddenNode, VisibleNode
 
 
 class Cli(IResetable):

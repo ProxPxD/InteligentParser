@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abstractTest import AbstractTest
 from smartcli.cli import Cli
-from smartcli.nodes.node import Root
+from smartcli.nodes.cli_elements import Root
 
 
 class GlosbeTranslatorTest(AbstractTest):

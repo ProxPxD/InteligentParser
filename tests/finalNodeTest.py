@@ -2,7 +2,7 @@ from parameterized import parameterized
 
 from smartcli import Flag
 from smartcli.exceptions import IncorrectArity
-from smartcli.nodes.node import FinalNode, Parameter, CliCollection
+from smartcli.nodes.cli_elements import FinalNode, Parameter, CliCollection
 from tests.abstractTest import AbstractTest
 
 

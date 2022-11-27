@@ -3,7 +3,7 @@ import unittest
 from typing import Iterable
 
 from smartcli.cli import Cli
-from smartcli.nodes.node import Root
+from smartcli.nodes.cli_elements import Root
 
 
 class AbstractTest(unittest.TestCase, abc.ABC):
