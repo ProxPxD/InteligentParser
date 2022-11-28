@@ -81,9 +81,7 @@ class HelpFormatter:
     def _format_list(self, to_format: list, depth: int) -> str:
         sep = self._get_section_separator(depth)
         prelist = [i-1 for i, elem in enumerate(to_format) if isinstance(elem, list) and elem[0]]
-        is_header = lambda i, part: i in prelist and isinstance(part, str)
-        add_colon = lambda part: part + ':'
-        add_colon_if_is_header = lambda i, part: add_colon(part) if is_header(i, part) else part
+        add_colon_if_is_header = lambda i, part: part + ':' if i in prelist and isinstance(part, str) else part
         not_empty_formatted = (self.format(add_colon_if_is_header(i, part), depth) for i, part in enumerate(to_format) if part and part[0])
         merged = self._lines_to_str(list(not_empty_formatted), sep)
         return merged
