@@ -11,12 +11,6 @@ from typing import Iterable
 from more_itertools import split_when
 
 
-class HelpType(Enum):
-    NODE = 'Nodes'
-    HIDDEN_NODES = 'Hidden Nodes'
-    PARAMETER = 'Parameters'
-    FLAG = 'Flags'
-
 #################
 # Help Building #
 #################
@@ -102,8 +96,7 @@ class HelpFormatter:
 
         words = paragraph.split(' ')
         lens_words = map(lambda w: (len(w) + 1, w), words)  # +1 for space
-        with_position = accumulate(lens_words, lambda acc, elem: (acc[0] + elem[0], elem[1]), initial=(0, ''))
-        next(with_position, None)
+        with_position = accumulate(lens_words, lambda acc, elem: (acc[0] + elem[0], elem[1]))
         lens_lines = split_when(with_position, is_line_bound)
         lines = map(lambda line: ' '.join(list(map(lambda pair: pair[1], line))), lens_lines)
         indented_lines = map(lambda line: indent + line, lines)
@@ -140,6 +133,24 @@ class SectionBuilder(HelpRoot, ABC):
             section = [section]
         return [self.get_section_name().upper(), list(section)]
 
+    def _get_sub_helps(self, kind: HelpType = None) -> dict[HelpType, list[IHelp]] | list[IHelp]:
+        sub_helps = self._root.get_sub_helps()
+        if kind is None:
+            return sub_helps
+        return sub_helps[kind] if kind in sub_helps else []
+
+    def _get_visible_nodes(self) -> list:
+        return self._get_sub_helps(HelpType.NODE)
+
+    def _get_hidden_nodes(self) -> list:
+        return self._get_sub_helps(HelpType.HIDDEN_NODES)
+
+    def _get_flags(self) -> list:
+        return self._get_sub_helps(HelpType.FLAG)
+
+    def _get_parameters(self) -> list:
+        return self._get_sub_helps(HelpType.PARAMETER)
+
     @abstractmethod
     def get_section_name(self) -> str:
         raise NotImplementedError
@@ -167,7 +178,10 @@ class SynopsisBuilder(SectionBuilder):
         return 'Synopsis'
 
     def _build_section(self):
-        return []  # TODO: implement
+        return [self._root.help.synopsis or self._build_synopsis()]  # TODO: implement
+
+    def _build_synopsis(self) -> str:
+        return ''
 
 
 class DescriptionBuilder(SectionBuilder):
@@ -219,6 +233,12 @@ class FlagsSectionBuilder(SubHelpBuilder):
         return HelpType.FLAG.value
 
 
+class HelpType(Enum):
+    NODE = 'Nodes'
+    HIDDEN_NODES = 'Hidden Nodes'
+    PARAMETER = 'Parameters'
+    FLAG = 'Flags'
+
 ################
 # Help storing #
 ################
@@ -255,3 +275,4 @@ class Help:
     name: str = ''
     short_description: str = ''
     long_description: str = ''
+    synopsis: str = ''
