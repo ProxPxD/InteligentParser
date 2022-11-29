@@ -3,8 +3,7 @@ from __future__ import annotations
 import shlex
 from typing import Iterator
 
-from .nodes.cli_elements import Node, Root, Parameter, HiddenNode, VisibleNode
-from .nodes.help import HelpManager
+from .nodes.cli_elements import Node, Root, Parameter, HiddenNode, VisibleNode, HelpManager
 from .nodes.interfaces import IResetable
 
 

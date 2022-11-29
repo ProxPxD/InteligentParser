@@ -82,6 +82,19 @@ class GlosbeTranslatorTest(AbstractTest):
         double_multi_node.set_params('word', 'from_lang', 'to_langs', storages=(words, from_langs, to_langs))
         double_multi_node.set_possible_param_order('from_lang')
         double_multi_node.set_possible_param_order('')
+
+
+        root.help.name = 'trans'
+        root.help.short_description = 'Translates any word from and to any language'
+        single_node.help.short_description = 'Translates a single word'
+        single_node.help.synopsis = 'trans <WORD> [FROM_LANG] [TO_LANG]'
+        word_node.help.short_description = 'Translates many words to a single node'
+        word_node.help.synopsis = 'trans [FROM_LANG] [TO_LANG] [-w] <WORD>...'
+        lang_node.help.short_description = 'Translates a word to many languages'
+        lang_node.help.synopsis = 'trans <WORD> [FROM_LANG] [-m] <TO_LANG>...'
+        double_multi_node.help.short_description = 'Translates many words into many languages'
+        double_multi_node.help.synopsis = 'trans [FROM_LANG] -w <WORD>... -m <TO_LANG>... '
+
         return self.cli
 
     def test_getting_default_value(self):
@@ -144,6 +157,7 @@ class GlosbeTranslatorTest(AbstractTest):
 
     def test_correct_single_mode_parsing(self):
         cli = self.create_correct_cli()
+        cli.print_help()
         root = cli.root
         from_langs = root.get_collection('from_langs')
         to_langs = root.get_collection('to_langs')

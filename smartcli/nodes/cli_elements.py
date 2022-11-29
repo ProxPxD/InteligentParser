@@ -197,8 +197,11 @@ class SynopsisBuilder(SectionBuilder):
         return [self._root.help.synopsis or self._build_synopsis()]  # TODO: implement
 
     def _build_synopsis(self) -> str:
-
         return ''
+
+    def _bracket(self, to_bracket: i_help_type) -> str:
+        if isinstance(to_bracket, FinalNode):
+            return f'<{to_bracket.help.name}>' if to_bracket.has_lower_limit() else f'[{to_bracket.help.name}]'
 
 
 class DescriptionBuilder(SectionBuilder):
@@ -224,10 +227,10 @@ class SubHelpBuilder(SectionBuilder, ABC):
         return reduce(op.add, map(self.build_single_sub_help, self.get_sub_helps()), [])
 
     def build_single_sub_help(self, sub_help: IHelp) -> list:
-        return [sub_help.get_help_naming_string(), [self.build_single_sub_help_description(sub_help)]]
+        return [sub_help.get_help_naming_string(), self.build_single_sub_help_description(sub_help)]
 
-    def build_single_sub_help_description(self, sub_help: IHelp) -> str:
-        return sub_help.help.short_description
+    def build_single_sub_help_description(self, sub_help: IHelp) -> list[str] | str:
+        return [sub_help.help.short_description]
 
 
 class ParametersSectionBuilder(SubHelpBuilder):
@@ -243,6 +246,11 @@ class VisibleNodesSectionBuilder(SubHelpBuilder):
 class HiddenNodesSectionBuilder(SubHelpBuilder):
     def get_section_name(self) -> str:
         return HelpType.HIDDEN_NODES.value
+
+    def build_single_sub_help(self, sub_help: IHelp) -> list:
+        built = super().build_single_sub_help(sub_help)
+        built += [[sub_help.help.synopsis]]
+        return built
 
 
 class FlagsSectionBuilder(SubHelpBuilder):
@@ -286,7 +294,6 @@ class IHelp(ABC):
         if not isinstance(naming, str):
             naming = str(list(naming))[1:-2]
         return naming
-
 
 @dataclass
 class Help:
@@ -1237,7 +1244,8 @@ class Flag(FinalNode, ImplicitActionActivation):
 
 
 default_type = str | int | list[str | int] | None
-stored_type = Node | Flag | Parameter | HiddenNode | VisibleNode | CliCollection
+i_help_type = Node | Flag | Parameter | HiddenNode | VisibleNode
+stored_type = i_help_type | CliCollection
 
 
 def get_name_and_object_for_namable(arg: str | INamable, type: Type) -> tuple[str, stored_type | INamable]:
