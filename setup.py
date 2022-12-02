@@ -22,5 +22,6 @@ setup(
     long_description=LONG_DESCRIPTION,
     packages=find_packages(),
     keywords=['python', 'cli', 'parser', 'smart', 'smartcli', 'smartparser'],
-    classifiers=[]
+    classifiers=[],
+    include_package_data=True,
 )

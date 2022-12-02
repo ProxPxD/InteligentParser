@@ -34,6 +34,11 @@ class Cli(IResetable):
         return self.parse(shlex.split(input))
 
     def parse(self, args: list[str] | str = None) -> Node:
+        to_return = self.parse_without_actions(args)
+        self._action_node.perform_all_actions()
+        return to_return
+
+    def parse_without_actions(self, args: list[str] | str = None):
         self.reset()
         if isinstance(args, str):
             args = shlex.split(args)
@@ -46,7 +51,6 @@ class Cli(IResetable):
         node_args = self._get_node_args(self._args)
         node_args = self._action_node.filter_flags_out(node_args)
         self._action_node.parse_node_args(node_args)
-        self._action_node.perform_all_actions()
 
         self._is_reset_needed = True
         to_return = ParsingResult(self._action_node)  # TODO: finish parsing result

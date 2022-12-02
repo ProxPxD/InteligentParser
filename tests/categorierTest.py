@@ -66,10 +66,11 @@ class CategorierTest(AbstractTest):
 
         return self.cli
 
-    @parameterized.expand([('idea', ),
-                           ('cat', ),
-                           ('descr', ),
-                           ])
+    @parameterized.expand([
+        ('idea', ),
+        ('cat', ),
+        ('descr', ),
+    ])
     def test_add_empty(self, type: str, ):
         cli = self.create_correct_cli()
         name = 'test'
@@ -106,10 +107,11 @@ class CategorierTest(AbstractTest):
         self.assertIn(f'cats: {[cat1, cat2]}', res)
         self.assertIn(f'descr: {descr_to_find}', res)
 
-    @parameterized.expand([('idea', ),
-                           ('cat', ),
-                           ('descr', ),
-                           ])
+    @parameterized.expand([
+        ('idea', ),
+        ('cat', ),
+        ('descr', ),
+    ])
     def test_add_with_to(self, type: str):
         cli = self.create_correct_cli()
         name = 'test'
@@ -120,10 +122,11 @@ class CategorierTest(AbstractTest):
         self.assertIn(self.is_str[type], res)
         self.assertIn(f'add {type} {name}', res)
 
-    @parameterized.expand([('idea',),
-                           ('cat',),
-                           ('descr',),
-                           ])
+    @parameterized.expand([
+        ('idea',),
+        ('cat',),
+        ('descr',),
+    ])
     def test_add_idea_with_to_and_categories(self, type):
         cli = self.create_correct_cli()
         name = 'test'
