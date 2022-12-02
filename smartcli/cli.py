@@ -9,8 +9,10 @@ from .nodes.interfaces import IResetable
 
 class Cli(IResetable):
 
-    def __init__(self, args: list[str] = None, root: Root = None, **kwargs):
+    def __init__(self, args: list[str] = None, root: Root | str = None, **kwargs):
         super().__init__(**kwargs)
+        if isinstance(root, str):
+            root = Root(root)
         self._root: Root = root or Root()
         self._help_manager = HelpManager(self._root)
         self._args: list = args or []
@@ -60,14 +62,12 @@ class Cli(IResetable):
         nodes = list(self._get_active_argument_nodes())
         curr_node = nodes[-1]
         hidden_nodes = list(self._get_active_hidden_nodes(curr_node))
-        if curr_node.is_hidden_nodes_only() and not hidden_nodes:
-            raise ValueError
         return nodes + hidden_nodes
 
     def _get_active_argument_nodes(self) -> Iterator[VisibleNode]:
         i, curr_node = 1, self._root
         yield self._root
-        while self._args and curr_node.has_visible_node(self._args[i]):
+        while i < len(self._args) and curr_node.has_visible_node(self._args[i]):
             curr_node = curr_node.get_visible_node(self._args[i])
             curr_node.activate()
             yield curr_node

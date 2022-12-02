@@ -1,6 +1,6 @@
 from parameterized import parameterized
 
-from smartcli import Node, CliCollection
+from smartcli import Node, CliCollection, Cli, Root
 from smartcli.exceptions import ValueAlreadyExistsError, IncorrectStateError
 from tests.abstractTest import AbstractTest
 
@@ -78,3 +78,13 @@ class NodeTest(AbstractTest):
 
     def test_already_existing(self):
         self.run_current_test_with_params()
+
+    def test_no_arg(self):
+        cli = Cli()
+        cli.parse_without_actions('t')
+
+    def test_no_arg_hidden_node(self):
+        root = Root()
+        root.set_only_hidden_nodes()
+        cli = Cli(root)
+        cli.parse_without_actions('t')
