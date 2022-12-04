@@ -7,13 +7,10 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import reduce
 from inspect import signature
-from itertools import accumulate
-from itertools import islice, zip_longest, chain, takewhile
-from typing import Iterable
-from typing import Iterator, Callable, Any, TypeVar, Type, Sized
+from itertools import accumulate, islice, zip_longest, chain, takewhile
+from typing import Iterable, Iterator, Callable, Any, TypeVar, Type, Sized
 
-from more_itertools import split_when
-from more_itertools import unique_everseen
+from more_itertools import split_when, unique_everseen
 
 from smartcli.exceptions import ParsingException, ValueAlreadyExistsError, IncorrectStateError, IncorrectArity
 from smartcli.nodes.interfaces import INamable, IResetable, compositeActive, active, bool_from_iterable, bool_from_void, any_from_void, any_from_str
@@ -376,7 +373,8 @@ class ConditionallyActiveMixin(IActivable):
         self.set_inactive_on_conditions(lambda: func([flag.is_active() for flag in flags]))
 
     def set_active_on_flags_in_collection(self, collection: CliCollection, *flags: Flag, but_not: list[Flag] | Flag = None):
-        but_not = [but_not] if isinstance(but_not, Flag) else []
+        but_not = but_not or []
+        but_not = [but_not] if isinstance(but_not, Flag) else but_not
         self.set_active_on_conditions(lambda: all((flag in collection for flag in flags)))
         self.set_inactive_on_flags_in_collection(collection, *but_not, func=any)
 
@@ -1012,7 +1010,7 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
 
     def __contains__(self, item):
         if isinstance(item, Flag):
-            return any(name in self for name in item.get_all_names())
+            return any(name in self.get_plain() for name in item.get_all_names())
         return super().__contains__(item)
 
     def __hash__(self):

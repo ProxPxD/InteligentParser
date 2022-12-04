@@ -96,3 +96,9 @@ class FinalNodeTest(AbstractTest):
         param.add_to_values('abc')
         self.assertEqual('abc', param.get())
         self.assertEqual('abc', param.get_nth(0))
+
+    def test_default_value_in_flag(self):
+        storage = CliCollection(default='-m')
+        flag = Flag('main', '-m')
+        self.assertTrue(flag in storage)
+        # self.assertTrue(flag.name in storage)
