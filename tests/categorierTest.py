@@ -27,7 +27,7 @@ class CategorierTest(AbstractTest):
         operand_param.set_inactive_on_flags(of)
 
         add_node, del_node, show_node, search_node, rename_node = root.add_nodes('add', 'del', 'show', 'search', 'rename')
-        operations.add_to_add_names(add_node, del_node, show_node, search_node, rename_node)
+        operations.add_to_add_self(add_node, del_node, show_node, search_node, rename_node)
         
         # Examples:
         # "add idea idea_name" == "add idea_name to idea" == "add to idea idea_name

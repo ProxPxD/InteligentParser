@@ -4,23 +4,28 @@ import shlex
 from typing import Iterator
 
 from .nodes.cli_elements import Node, Root, Parameter, HiddenNode, VisibleNode, HelpManager
-from .nodes.interfaces import IResetable
+from .nodes.interfaces import IResetable, any_from_void, bool_from_void
 
 
 class Cli(IResetable):
 
-    def __init__(self, args: list[str] = None, root: Root | str = None, **kwargs):
+    def __init__(self, args: list[str] = None, root: Root | str = None, out=print, **kwargs):
         super().__init__(**kwargs)
         if isinstance(root, str):
             root = Root(root)
         self._root: Root = root or Root()
-        self._help_manager = HelpManager(self._root)
         self._args: list = args or []
         self._active_nodes = []
         self._action_node: Node = None
         self._is_reset_needed = False
+        self._help_manager = HelpManager(self._root, out=out)
+        self._used_arity = 0
+        self._arity_actions: dict[bool_from_void, any_from_void] = {}
 
-    def print_help(self, out=print):
+    def set_out_stream(self, out):
+        self._help_manager.set_out_stream(out)
+
+    def print_help(self, out=None):
         self._help_manager.print_help(out=out)
 
     def set_args(self, args: list[str]):
@@ -53,6 +58,8 @@ class Cli(IResetable):
 
         node_args = self._get_node_args(self._args)
         node_args = self._action_node.filter_flags_out(node_args)
+        self._used_arity = len(node_args)
+        self._run_arity_actions()  # Because node arguments count can influence it, TODO: think of refactor
         self._action_node.parse_node_args(node_args)
 
         self._is_reset_needed = True
@@ -80,11 +87,56 @@ class Cli(IResetable):
     def _get_node_args(self, args: list[str]) -> list[str]:
         return args[len([node for node in self._active_nodes if not isinstance(node, HiddenNode)]):]
 
+    def _get_node_arguments_count(self) -> int:
+        return self._used_arity
+
+    def _run_arity_actions(self) -> None:
+        for cond, action in self._arity_actions.items():
+            if cond():
+                action()
+
+    @property
+    def node_arguments_count(self) -> int:
+        return self._used_arity
+
     def reset(self) -> None:
         if self._is_reset_needed:
             for resetable in self._root.get_resetable():
                 resetable.reset()
             self._is_reset_needed = False
+            self._used_arity = 0
+
+    #Arity conds TODO: add tests
+
+    def when_used_arity_is_odd(self, action: any_from_void) -> None:
+        self.when_used_arity(action, lambda: self._used_arity % 2 == 1)
+
+    def when_used_arity_is_even(self, action: any_from_void) -> None:
+        self.when_used_arity(action, lambda: self._used_arity % 2 == 0)
+
+    def when_used_arity_is_positive(self, action: any_from_void) -> None:
+        self.when_used_arity_is_not_equal(action, 0)
+
+    def when_used_arity_is_not_equal(self, action: any_from_void, condition_arity: int) -> None:
+        self.when_used_arity(action, lambda: self._used_arity != condition_arity)
+
+    def when_used_arity_is_less(self, action: any_from_void, condition_arity: int) -> None:
+        self.when_used_arity(action, lambda: self._used_arity < condition_arity)
+
+    def when_used_arity_is_less_or_equal(self, action: any_from_void, condition_arity: int) -> None:
+        self.when_used_arity(action, lambda: self._used_arity <= condition_arity)
+
+    def when_used_arity_is_greater(self, action: any_from_void, condition_arity: int) -> None:
+        self.when_used_arity(action, lambda: self._used_arity > condition_arity)
+
+    def when_used_arity_is_greater_or_equal(self, action: any_from_void, condition_arity: int) -> None:
+        self.when_used_arity(action, lambda: self._used_arity >= condition_arity)
+
+    def when_used_arity_is_equal(self, action: any_from_void, condition_arity: int) -> None:
+        self.when_used_arity(action, lambda: self._used_arity == condition_arity)
+
+    def when_used_arity(self, action: any_from_void, condition: bool_from_void) -> None:
+        self._arity_actions[condition] = action
 
 
 class ParsingResult:  # TODO: implement default values/methods (like name, etc.)

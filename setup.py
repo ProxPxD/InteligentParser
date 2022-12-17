@@ -7,7 +7,7 @@ readme_path = main_dir / "README.md"
 LONG_DESCRIPTION = readme_path.read_text() if readme_path.exists() else 'LONG DESCRIPTION'
 
 
-VERSION = '0.1.3'
+VERSION = '0.1.4'
 DESCRIPTION = 'DESCRIPTION'
 
 # Setting up

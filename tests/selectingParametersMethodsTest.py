@@ -27,7 +27,7 @@ class SelectingParametersMethodsTest(AbstractTest):
         root.set_default_to_params(1, 'c', 'd')
         root.set_type_to_params(float, a, b, c, d, 'mult')
         mult = root.get_param('mult')
-        root.set_default_setting_order(mult)
+        root.set_parameters_to_skip_order(mult)
         root.add_action(lambda: reduce(op.mul, mult.get_plain(), a.get() * c.get() + b.get() * d.get()))
         return self.cli
 

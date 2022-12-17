@@ -38,8 +38,8 @@ class GlosbeTranslatorTest(AbstractTest):
         single_flag = root.add_flag('--single', '-s')
         word_flag = root.add_flag('--word', '-w')
         lang_flag = root.add_flag('--multi', '-m', flag_limit=None, storage=to_langs)  # infinite
-        single_flag.when_active_add_name_to(current_modes)  # same as 1
-        current_modes.add_to_add_names(lang_flag, word_flag)  # same as 1
+        single_flag.when_active_add_self_to(current_modes)  # same as 1
+        current_modes.add_to_add_self(lang_flag, word_flag)  # same as 1
         word_flag.set_limit(None, storage=words)  # infinite
 
         test_string = 'test'
@@ -73,11 +73,11 @@ class GlosbeTranslatorTest(AbstractTest):
         # Lang's params
         lang_node.set_params('word', 'from_lang', 'to_langs', storages=(words, from_langs, to_langs))
         lang_node.set_possible_param_order('words from_lang to_langs')
-        lang_node.set_default_setting_order('from_lang')
+        lang_node.set_parameters_to_skip_order('from_lang')
         # Word's params
         word_node.set_params('word', 'from_lang', 'to_langs', storages=(words, from_langs, to_langs))
         word_node.set_possible_param_order('from_lang to_langs words')
-        lang_node.set_default_setting_order('from_lang', 'to_langs')
+        lang_node.set_parameters_to_skip_order('from_lang', 'to_langs')
         # Double's params
         double_multi_node.set_params('word', 'from_lang', 'to_langs', storages=(words, from_langs, to_langs))
         double_multi_node.set_possible_param_order('from_lang')
