@@ -539,9 +539,11 @@ class ActionOnActivationMixin:
             func()
 
     def _perform_additional_actions_on_activation(self) -> None:
-        for cond, action in self._additional_actions.items():
-            if cond():
-                action()
+        for action in self._get_active_additional_actions():
+            action()
+
+    def _get_active_additional_actions(self) -> Iterable[any_from_void]:
+        return (action for action, cond in self._additional_actions.items() if cond())
 
 
 class ActionOnImplicitActivation(ImplicitlyActivableMixin, ActionOnActivationMixin):
