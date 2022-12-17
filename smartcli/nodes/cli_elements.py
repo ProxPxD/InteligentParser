@@ -751,6 +751,8 @@ class ParameterManagerMixin(IResetable):
         if right is None:
             right = self._find_greater_arity_for_arity(arity, allowed)
 
+        if not right:
+            raise IncorrectArity
         return self._orders[right]
 
     def get_allowed_arities(self) -> Iterable[int]:
@@ -770,13 +772,14 @@ class ParameterManagerMixin(IResetable):
         return true_minimal_arity <= arity_to_check
 
     # lt - less than
-    def _find_multi_param_lt_arity_for_arity(self, arity: int, allowed_arities: list[int]) -> int:
-        multi_param_arities = filter(lambda a: self.get_param(self._orders[a][-1]).is_multi(), allowed_arities)
+    def _find_multi_param_lt_arity_for_arity(self, arity: int, allowed_arities: list[int]) -> int | None:
+        with_params = filter(lambda a: bool(self._orders[a]), allowed_arities)
+        multi_param_arities = filter(lambda a: self.get_param(self._orders[a][-1]).is_multi(), with_params)
         smaller_arities = filter(lambda a: a < arity, multi_param_arities)
         return max(smaller_arities, default=None)
 
-    def _find_greater_arity_for_arity(self, arity: int, allowed_arities: list[int]):
-        return min(filter(lambda a: a > arity, allowed_arities))
+    def _find_greater_arity_for_arity(self, arity: int, allowed_arities: list[int]) -> int | None:
+        return min(filter(lambda a: a > arity, allowed_arities), default=None)
 
     def _get_param_names_to_skip_for(self, order: list[str], arity: int) -> Iterable[str]:
         must_be_skipped = list(self._get_param_names_that_must_be_skipped(order))

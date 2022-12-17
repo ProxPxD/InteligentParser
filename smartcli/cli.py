@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import shlex
-from typing import Iterator
+from typing import Iterator, Callable, Iterable
 
 from .nodes.cli_elements import Node, Root, Parameter, HiddenNode, VisibleNode, HelpManager
 from .nodes.interfaces import IResetable, any_from_void, bool_from_void
@@ -20,7 +20,7 @@ class Cli(IResetable):
         self._is_reset_needed = False
         self._help_manager = HelpManager(self._root, out=out)
         self._used_arity = 0
-        self._arity_actions: dict[bool_from_void, any_from_void] = {}
+        self._actions: dict[bool_from_void, any_from_void] = {}
 
     def set_out_stream(self, out):
         self._help_manager.set_out_stream(out)
@@ -59,7 +59,7 @@ class Cli(IResetable):
         node_args = self._get_node_args(self._args)
         node_args = self._action_node.filter_flags_out(node_args)
         self._used_arity = len(node_args)
-        self._run_arity_actions()  # Because node arguments count can influence it, TODO: think of refactor
+        self._run_cli_actions()  # Because node arguments count can influence it, TODO: think of refactor
         self._action_node.parse_node_args(node_args)
 
         self._is_reset_needed = True
@@ -90,10 +90,12 @@ class Cli(IResetable):
     def _get_node_arguments_count(self) -> int:
         return self._used_arity
 
-    def _run_arity_actions(self) -> None:
-        for cond, action in self._arity_actions.items():
-            if cond():
-                action()
+    def _run_cli_actions(self) -> None:
+        for action in self._get_active_actions():
+            action()
+
+    def _get_active_actions(self) -> Iterable[Callable]:
+        return (action for cond, action in self._actions.items() if cond())
 
     @property
     def node_arguments_count(self) -> int:
@@ -106,37 +108,37 @@ class Cli(IResetable):
             self._is_reset_needed = False
             self._used_arity = 0
 
-    #Arity conds TODO: add tests
+    # Arity conds TODO: add tests
 
     def when_used_arity_is_odd(self, action: any_from_void) -> None:
-        self.when_used_arity(action, lambda: self._used_arity % 2 == 1)
+        self.when(action, lambda: self._used_arity % 2 == 1)
 
     def when_used_arity_is_even(self, action: any_from_void) -> None:
-        self.when_used_arity(action, lambda: self._used_arity % 2 == 0)
+        self.when(action, lambda: self._used_arity % 2 == 0)
 
     def when_used_arity_is_positive(self, action: any_from_void) -> None:
         self.when_used_arity_is_not_equal(action, 0)
 
     def when_used_arity_is_not_equal(self, action: any_from_void, condition_arity: int) -> None:
-        self.when_used_arity(action, lambda: self._used_arity != condition_arity)
+        self.when(action, lambda: self._used_arity != condition_arity)
 
     def when_used_arity_is_less(self, action: any_from_void, condition_arity: int) -> None:
-        self.when_used_arity(action, lambda: self._used_arity < condition_arity)
+        self.when(action, lambda: self._used_arity < condition_arity)
 
     def when_used_arity_is_less_or_equal(self, action: any_from_void, condition_arity: int) -> None:
-        self.when_used_arity(action, lambda: self._used_arity <= condition_arity)
+        self.when(action, lambda: self._used_arity <= condition_arity)
 
     def when_used_arity_is_greater(self, action: any_from_void, condition_arity: int) -> None:
-        self.when_used_arity(action, lambda: self._used_arity > condition_arity)
+        self.when(action, lambda: self._used_arity > condition_arity)
 
     def when_used_arity_is_greater_or_equal(self, action: any_from_void, condition_arity: int) -> None:
-        self.when_used_arity(action, lambda: self._used_arity >= condition_arity)
+        self.when(action, lambda: self._used_arity >= condition_arity)
 
     def when_used_arity_is_equal(self, action: any_from_void, condition_arity: int) -> None:
-        self.when_used_arity(action, lambda: self._used_arity == condition_arity)
+        self.when(action, lambda: self._used_arity == condition_arity)
 
-    def when_used_arity(self, action: any_from_void, condition: bool_from_void) -> None:
-        self._arity_actions[condition] = action
+    def when(self, action: any_from_void, condition: bool_from_void) -> None:
+        self._actions[condition] = action
 
 
 class ParsingResult:  # TODO: implement default values/methods (like name, etc.)
