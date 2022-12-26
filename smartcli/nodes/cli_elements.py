@@ -594,7 +594,7 @@ class FlagManagerMixin:
     def __getitem__(self, name: str):
         return self.get_flag(name)
 
-    def get_flag(self, name: str):
+    def get_flag(self, name: str) -> Flag:
         return next((flag for flag in self._flags if flag.has_name(name)))
 
     def get_flags(self, *flag_names: str) -> list[Flag]:
@@ -602,6 +602,9 @@ class FlagManagerMixin:
             return self._flags
         else:
             return [flag for flag in self._flags if any(name in flag_names for name in flag.get_all_names())]
+
+    def get_active_flags(self) -> list[Flag]:
+        return list(filter(Flag.is_active, self._flags))
 
     def add_flag(self, main: str | Flag, *alternative_names: str, storage: CliCollection = None, storage_limit: int | None = -1, storage_lower_limit=-1, default: default_type = None, flag_limit=-1, flag_lower_limit=-1) -> Flag:
         name = get_name(main)
@@ -752,7 +755,7 @@ class ParameterManagerMixin(IResetable):
             right = self._find_greater_arity_for_arity(arity, allowed)
 
         if not right:
-            raise IncorrectArity
+            raise IncorrectArity(arity, '~' + str(allowed))
         return self._orders[right]
 
     def get_allowed_arities(self) -> Iterable[int]:
@@ -1169,7 +1172,7 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
         :return: As get plain but if the collection has length of 1 gets the only element of it
         '''
         to_return = self.get_plain()
-        if isinstance(to_return, Sized) and isinstance(to_return, Iterable) and len(to_return) == 1:
+        if isinstance(to_return, Sized) and isinstance(to_return, Iterable) and len(to_return) == 1 and not isinstance(to_return, str):
             to_return = next(iter(to_return))
         return to_return
 
@@ -1382,7 +1385,7 @@ class FinalNode(IDefaultStorable, INamable, IResetable, IHelp, ABC):
         '''
         :return: Return truncated to the limit values of the collection or if there are no values, returns the default values
         '''
-        to_return = self._storage.get_plain()
+        to_return = self._storage.get_as_list()
         if isinstance(to_return, Sized):
             if self._limit is not None and self._limit < len(to_return):
                 to_return = to_return[:self._limit]
@@ -1445,6 +1448,9 @@ class Flag(FinalNode, ActionOnImplicitActivation):
 
     def get_all_names(self) -> list[str]:
         return [self._name] + list(self._alternative_names)
+
+    def __hash__(self):
+        return hash((self.name, *self._alternative_names))
 
 
 default_type = str | int | list[str | int] | None

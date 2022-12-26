@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import shlex
-from typing import Iterator, Callable, Iterable
+from typing import Iterator, Callable, Iterable, Any
 
 from .nodes.cli_elements import Node, Root, Parameter, HiddenNode, VisibleNode, HelpManager
 from .nodes.interfaces import IResetable, any_from_void, bool_from_void
@@ -20,7 +20,9 @@ class Cli(IResetable):
         self._is_reset_needed = False
         self._help_manager = HelpManager(self._root, out=out)
         self._used_arity = 0
-        self._actions: dict[bool_from_void, any_from_void] = {}
+        self._pre_parse_actions: dict[bool_from_void, any_from_void] = {}
+        self._post_parse_actions: dict[bool_from_void, any_from_void] = {}
+        self._args_preprocessing_actions: dict[bool_from_void, Callable[[list[str]], Any]] = {}
 
     def set_out_stream(self, out):
         self._help_manager.set_out_stream(out)
@@ -51,6 +53,7 @@ class Cli(IResetable):
         if isinstance(args, str):
             args = shlex.split(args)
         self.set_args(args)
+        self._args = self._run_args_preprocessing_actions()
         self._args = self._root.filter_flags_out(self._args)
 
         self._active_nodes = self._get_active_nodes()
@@ -59,10 +62,16 @@ class Cli(IResetable):
         node_args = self._get_node_args(self._args)
         node_args = self._action_node.filter_flags_out(node_args)
         self._used_arity = len(node_args)
-        self._run_cli_actions()  # Because node arguments count can influence it, TODO: think of refactor
+        self._run_pre_parse_actions()  # Because node arguments count can influence it, TODO: think of refactor
         self._action_node.parse_node_args(node_args)
+        self._run_post_parse_actions()
 
         self._is_reset_needed = True
+
+    def _run_args_preprocessing_actions(self) -> list[str]:
+        for action in self._get_active_actions(self._args_preprocessing_actions):
+            self._args = action(self._args)
+        return self._args
 
     def _get_active_nodes(self) -> list[Node]:
         nodes = list(self._get_active_argument_nodes())
@@ -90,12 +99,24 @@ class Cli(IResetable):
     def _get_node_arguments_count(self) -> int:
         return self._used_arity
 
-    def _run_cli_actions(self) -> None:
-        for action in self._get_active_actions():
+    def _run_pre_parse_actions(self) -> None:
+        self._run_actions(self._get_active_pre_parse_actions())
+
+    def _run_post_parse_actions(self) -> None:
+        self._run_actions(self._get_active_post_parse_actions())
+
+    def _run_actions(self, actions: Iterable[Callable]) -> None:
+        for action in actions:
             action()
 
-    def _get_active_actions(self) -> Iterable[Callable]:
-        return (action for cond, action in self._actions.items() if cond())
+    def _get_active_pre_parse_actions(self) -> Iterable[Callable]:
+        return self._get_active_actions(self._pre_parse_actions)
+
+    def _get_active_post_parse_actions(self) -> Iterable[Callable]:
+        return self._get_active_actions(self._post_parse_actions)
+
+    def _get_active_actions(self, actions: dict[bool_from_void, any_from_void]) -> Iterable[Callable]:
+        return (action for cond, action in actions.items() if cond())
 
     @property
     def node_arguments_count(self) -> int:
@@ -111,34 +132,43 @@ class Cli(IResetable):
     # Arity conds TODO: add tests
 
     def when_used_arity_is_odd(self, action: any_from_void) -> None:
-        self.when(action, lambda: self._used_arity % 2 == 1)
+        self.add_pre_parse_action_when(action, lambda: self._used_arity % 2 == 1)
 
     def when_used_arity_is_even(self, action: any_from_void) -> None:
-        self.when(action, lambda: self._used_arity % 2 == 0)
+        self.add_pre_parse_action_when(action, lambda: self._used_arity % 2 == 0)
 
     def when_used_arity_is_positive(self, action: any_from_void) -> None:
         self.when_used_arity_is_not_equal(action, 0)
 
     def when_used_arity_is_not_equal(self, action: any_from_void, condition_arity: int) -> None:
-        self.when(action, lambda: self._used_arity != condition_arity)
+        self.add_pre_parse_action_when(action, lambda: self._used_arity != condition_arity)
 
     def when_used_arity_is_less(self, action: any_from_void, condition_arity: int) -> None:
-        self.when(action, lambda: self._used_arity < condition_arity)
+        self.add_pre_parse_action_when(action, lambda: self._used_arity < condition_arity)
 
     def when_used_arity_is_less_or_equal(self, action: any_from_void, condition_arity: int) -> None:
-        self.when(action, lambda: self._used_arity <= condition_arity)
+        self.add_pre_parse_action_when(action, lambda: self._used_arity <= condition_arity)
 
     def when_used_arity_is_greater(self, action: any_from_void, condition_arity: int) -> None:
-        self.when(action, lambda: self._used_arity > condition_arity)
+        self.add_pre_parse_action_when(action, lambda: self._used_arity > condition_arity)
 
     def when_used_arity_is_greater_or_equal(self, action: any_from_void, condition_arity: int) -> None:
-        self.when(action, lambda: self._used_arity >= condition_arity)
+        self.add_pre_parse_action_when(action, lambda: self._used_arity >= condition_arity)
 
     def when_used_arity_is_equal(self, action: any_from_void, condition_arity: int) -> None:
-        self.when(action, lambda: self._used_arity == condition_arity)
+        self.add_pre_parse_action_when(action, lambda: self._used_arity == condition_arity)
 
-    def when(self, action: any_from_void, condition: bool_from_void) -> None:
-        self._actions[condition] = action
+    def add_pre_parse_action_when(self, action: any_from_void, condition: bool_from_void) -> None:
+        self._pre_parse_actions[condition] = action
+
+    def add_post_parse_action_when(self, action: any_from_void, condition: bool_from_void) -> None:
+        self._post_parse_actions[condition] = action
+
+    #  args preprocessing actions
+
+    # TODO: implement more actions to perform on args before parsing and their tests
+    def add_args_preprocessing_action(self, action: Callable[[list[str]], list[str]], condition: bool_from_void) -> None:
+        self._args_preprocessing_actions[condition] = action
 
 
 class ParsingResult:  # TODO: implement default values/methods (like name, etc.)
