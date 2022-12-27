@@ -157,7 +157,6 @@ class GlosbeTranslatorTest(AbstractTest):
 
     def test_correct_single_mode_parsing(self):
         cli = self.create_correct_cli()
-        cli.print_help()
         root = cli.root
         from_langs = root.get_collection('from_langs')
         to_langs = root.get_collection('to_langs')
