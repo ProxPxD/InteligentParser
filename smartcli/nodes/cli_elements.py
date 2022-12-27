@@ -352,12 +352,6 @@ class DefaultStorage(IDefaultStorable):
         to_return = next((get_default() for condition, get_default in reversed(self._get_defaults.items()) if condition()), None)
         return to_return
 
-    def __contains__(self, item):
-        if not isinstance(item, (int, float, str, list, dict, set)) and 'name' in item.__dict__:
-            item = item.name
-
-        return super().__contains__(item)
-
 ###########################
 # Activations and actions #
 ###########################
@@ -1185,7 +1179,6 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
     def get_lower_limit(self) -> int:
         return self._lower_limit
 
-
     def get_nth(self, n: int):
         return self.get_plain()[n]
 
@@ -1228,10 +1221,15 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
 
     def __contains__(self, item):
         if isinstance(item, Flag):
-            names = filter(lambda elem: isinstance(elem, str), self.get_plain())
-            flags = filter(lambda elem: isinstance(elem, Flag), self.get_plain())
+            items = self.get_as_list()
+            names = filter(lambda elem: isinstance(elem, str), items)
+            flags = filter(lambda elem: isinstance(elem, Flag), items)
             return item.has_name_in(names) or any(item.has_name_in(flag.get_all_names()) for flag in flags)
-        return super().__contains__(item)
+
+        if isinstance(item, INamable):
+            item = item.name
+
+        return item in self.get_as_list()
 
     def __hash__(self):
         return hash(tuple(self))

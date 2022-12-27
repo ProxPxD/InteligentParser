@@ -50,8 +50,7 @@ class FinalNodeTest(AbstractTest):
                            (IncorrectArity, ['added'], Parameter('1', storage=CliCollection(upper_limit=2), parameter_lower_limit=2), FinalNode.get),
                            (IncorrectArity, ['added'], Flag('2', storage=CliCollection(lower_limit=2, upper_limit=None)), FinalNode.get_plain),
                            (IncorrectArity, ['added'], Flag('3', storage=CliCollection(lower_limit=2, upper_limit=None)), FinalNode.get),
-                            ],
-                          name_func=name_get_tests)
+    ], name_func=name_get_tests)
     def test_raises_when_get(self, expected_exception, to_add, final_node: FinalNode, getter):
         final_node.add_to_values(to_add)
         with self.assertRaises(expected_exception):
@@ -88,17 +87,16 @@ class FinalNodeTest(AbstractTest):
                 final_node.add_to_values(to_add)
                 final_node.get_plain()
 
-    def test_type_casting(self):
-        self.run_current_test_with_params()
-
     def test_string_as_return_type(self):
         param = Parameter('test', storage_limit=2)
         param.add_to_values('abc')
         self.assertEqual('abc', param.get())
         self.assertEqual('abc', param.get_nth(0))
 
-    def test_default_value_in_flag(self):
+    @parameterized.expand([
+        ('flag', Flag('main', '-m')),
+        ('string', '-m'),
+    ])
+    def test_default_value_in_flag(self, name: str, to_check: Flag | str):
         storage = CliCollection(default='-m')
-        flag = Flag('main', '-m')
-        self.assertTrue(flag in storage)
-        # self.assertTrue(flag.name in storage)
+        self.assertTrue(to_check in storage)
