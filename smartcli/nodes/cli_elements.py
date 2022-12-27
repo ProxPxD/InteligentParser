@@ -601,10 +601,10 @@ class FlagManagerMixin:
         if not flag_names:
             return self._flags
         else:
-            return [flag for flag in self._flags if any(name in flag_names for name in flag.get_all_names())]
+            return [flag for flag in self._flags if flag.has_name_in(flag_names)]
 
-    def get_active_flags(self) -> list[Flag]:
-        return list(filter(Flag.is_active, self._flags))
+    def get_active_flags(self) -> Iterable[Flag]:
+        return filter(Flag.is_active, self._flags)
 
     def add_flag(self, main: str | Flag, *alternative_names: str, storage: CliCollection = None, storage_limit: int | None = -1, storage_lower_limit=-1, default: default_type = None, flag_limit=-1, flag_lower_limit=-1) -> Flag:
         name = get_name(main)
@@ -632,10 +632,13 @@ class FlagManagerMixin:
 
     def _chunk_by_flags(self, args: list[str]) -> Iterator[list[str]]:
         curr_i = 0
+        met_node: VisibleNode | None = None
         for i, arg in enumerate(args):
-            if self.has_flag(arg):
+            if self.has_flag(arg) and not (met_node and met_node.has_flag(arg)):
                 yield args[curr_i: i]
                 curr_i = i
+            elif self.has_visible_node(arg):  # TODO: Flag mixin does not have those method - think of refactoring it
+                met_node = self.get_visible_node(arg)
         yield args[curr_i:]
 
     def _filter_flags_out_of_chunk(self, chunk: list[str], activate=True) -> list[str]:
@@ -895,6 +898,7 @@ class Node(INamable, IHelp, ParameterManagerMixin, IResetable, ActionOnActivatio
         self._actions: dict[bool_from_void, SmartList[any_from_void]] = dict()
         self._action_results: list = []
         self._only_hidden = False
+        self._help_manager = HelpManager(self)
         self._help = Help(short_description, long_description)
 
     # Help
@@ -912,6 +916,19 @@ class Node(INamable, IHelp, ParameterManagerMixin, IResetable, ActionOnActivatio
 
     def _get_help_naming(self) -> Iterable[str] | str:
         return self.get_name()
+
+    def add_general_help_flag_to_all(self, main: str, *alternative_names: str, action: any_from_void) -> None:
+        to_apply = lambda node: node._add_general_flag_to_self(main, *alternative_names, action=action)
+        self.apply_to_self_and_all_nodes(to_apply)
+
+    def _add_general_flag_to_self(self, main: str, *alternative_names: str, action: any_from_void) -> None:
+        flag = self.add_flag(main, *alternative_names)
+        action = action or (lambda: self._help_manager.print_help())
+        self.add_action_when_is_active(action, flag)
+
+    @property
+    def help_manager(self) -> HelpManager:
+        return self._help_manager
 
     # Resetable
 
@@ -964,6 +981,11 @@ class Node(INamable, IHelp, ParameterManagerMixin, IResetable, ActionOnActivatio
             return result is not None
         except LookupError:
             return False
+
+    def apply_to_self_and_all_nodes(self, to_apply: Callable, **kwargs):
+        to_apply(self)
+        for node in self.get_all_nodes():
+            node.apply_to_self_and_all_nodes(to_apply, **kwargs)
 
     # Nodes
     def get_node(self, name: str) -> Node:
@@ -1206,7 +1228,9 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
 
     def __contains__(self, item):
         if isinstance(item, Flag):
-            return any(name in self.get_plain() for name in item.get_all_names())
+            names = filter(lambda elem: isinstance(elem, str), self.get_plain())
+            flags = filter(lambda elem: isinstance(elem, Flag), self.get_plain())
+            return item.has_name_in(names) or any(item.has_name_in(flag.get_all_names()) for flag in flags)
         return super().__contains__(item)
 
     def __hash__(self):
@@ -1436,6 +1460,8 @@ class Flag(FinalNode, ActionOnImplicitActivation):
 
     def reset(self):
         self.deactivate()
+
+    # Common
 
     def add_alternative_names(self, *alternative_names: str):
         self._alternative_names |= set(alternative_names)

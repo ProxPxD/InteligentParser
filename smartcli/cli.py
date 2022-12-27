@@ -3,7 +3,7 @@ from __future__ import annotations
 import shlex
 from typing import Iterator, Callable, Iterable, Any
 
-from .nodes.cli_elements import Node, Root, Parameter, HiddenNode, VisibleNode, HelpManager
+from .nodes.cli_elements import Node, Root, Parameter, HiddenNode, VisibleNode
 from .nodes.interfaces import IResetable, any_from_void, bool_from_void
 
 
@@ -18,17 +18,19 @@ class Cli(IResetable):
         self._active_nodes = []
         self._action_node: Node = None
         self._is_reset_needed = False
-        self._help_manager = HelpManager(self._root, out=out)
         self._used_arity = 0
         self._pre_parse_actions: dict[bool_from_void, any_from_void] = {}
         self._post_parse_actions: dict[bool_from_void, any_from_void] = {}
         self._args_preprocessing_actions: dict[bool_from_void, Callable[[list[str]], Any]] = {}
 
     def set_out_stream(self, out):
-        self._help_manager.set_out_stream(out)
+        self.root.help_manager.set_out_stream(out)
 
     def print_help(self, out=None):
-        self._help_manager.print_help(out=out)
+        self.root.help_manager.print_help(out=out)
+
+    def add_general_help_flag(self, name: str, alternative_names: str, action: any_from_void) -> None:
+        self.root.add_general_help_flag_to_all(name, *alternative_names, action=action)
 
     def set_args(self, args: list[str]):
         if args:
