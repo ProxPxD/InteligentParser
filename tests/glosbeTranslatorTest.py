@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from unittest import skip
+
+from parameterized import parameterized
+
 from abstractTest import AbstractTest
 from smartcli.cli import Cli
 from smartcli.nodes.cli_elements import Root
+from smartcli.nodes.smartList import SmartList
 
 
 class GlosbeTranslatorTest(AbstractTest):
@@ -21,7 +26,7 @@ class GlosbeTranslatorTest(AbstractTest):
     def get_first_n_langs(self, n) -> list[str]:
         return self.langs[:n] if n < len(self.langs) else self.langs
 
-    def create_correct_cli(self) -> Cli:
+    def create_correct_cli(self, add_help=True) -> Cli:
         self.cli = Cli()
         root = self.cli.root
         root.set_only_hidden_nodes()
@@ -83,18 +88,19 @@ class GlosbeTranslatorTest(AbstractTest):
         double_multi_node.set_possible_param_order('from_lang')
         double_multi_node.set_possible_param_order('')
 
+        if add_help:
+            root.help.name = 'trans'
+            root.help.short_description = 'Translates any word from and to any language'
+            single_node.help.short_description = 'Translates a single word'
+            single_node.help.synopsis = 'trans <WORD> [FROM_LANG] [TO_LANG]'
+            word_node.help.short_description = 'Translates many words to a single node'
+            word_node.help.synopsis = 'trans [FROM_LANG] [TO_LANG] [-w] <WORD>...'
+            lang_node.help.short_description = 'Translates a word to many languages'
+            lang_node.help.synopsis = 'trans <WORD> [FROM_LANG] [-m] <TO_LANG>...'
+            double_multi_node.help.short_description = 'Translates many words into many languages'
+            double_multi_node.help.synopsis = 'trans [FROM_LANG] -w <WORD>... -m <TO_LANG>... '
 
-        root.help.name = 'trans'
-        root.help.short_description = 'Translates any word from and to any language'
-        single_node.help.short_description = 'Translates a single word'
-        single_node.help.synopsis = 'trans <WORD> [FROM_LANG] [TO_LANG]'
-        word_node.help.short_description = 'Translates many words to a single node'
-        word_node.help.synopsis = 'trans [FROM_LANG] [TO_LANG] [-w] <WORD>...'
-        lang_node.help.short_description = 'Translates a word to many languages'
-        lang_node.help.synopsis = 'trans <WORD> [FROM_LANG] [-m] <TO_LANG>...'
-        double_multi_node.help.short_description = 'Translates many words into many languages'
-        double_multi_node.help.synopsis = 'trans [FROM_LANG] -w <WORD>... -m <TO_LANG>... '
-
+        root.add_general_help_flag_to_all('--help', '-h')
         return self.cli
 
     def test_getting_default_value(self):
@@ -174,3 +180,31 @@ class GlosbeTranslatorTest(AbstractTest):
 
         self.assertEqual('pl/en/mieć', single.get_result(), msg='Action is not performed correctly for single mode')
 
+    @parameterized.expand([
+        ('general_help', 't -h'),
+    ])
+    def test_automated_help_printing(self, name: str, input_line: str):
+        cli = self.create_correct_cli(add_help=False)
+        text_elems = SmartList()
+        cli.set_out_stream(text_elems.__iadd__)
+
+        cli.parse(input_line)
+        text = '\n'.join(text_elems)
+        print(text)
+
+        self.fail(NotImplementedError.__name__)
+
+    @parameterized.expand([
+        ('general_help', 't -h'),
+    ])
+    @skip
+    def test_set_help_printing(self, name: str, input_line: str):
+        cli = self.create_correct_cli(add_help=True)
+        text_elems = SmartList()
+        cli.set_out_stream(text_elems.__iadd__)
+
+        cli.parse(input_line)
+        text = '\n'.join(text_elems)
+        print(text)
+
+        self.fail(NotImplementedError.__name__)  # TODO: finish

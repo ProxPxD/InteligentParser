@@ -190,7 +190,7 @@ class HeaderBuilder(SectionBuilder):
         return [f'{self._root.get_help_naming_string()} - {self.get_header_description_string()}']
 
     def get_header_description_string(self) -> str:
-        return self._root.help.short_description
+        return self._root.get_short_description()
 
 
 class SynopsisBuilder(SectionBuilder):
@@ -199,14 +199,14 @@ class SynopsisBuilder(SectionBuilder):
         return 'Synopsis'
 
     def _build_section(self):
-        return [self._root.help.synopsis or self._build_synopsis()]  # TODO: implement
+        return [self._root.get_synopsis() or self._build_synopsis()]  # TODO: implement
 
     def _build_synopsis(self) -> str:
         return ''
 
     def _bracket(self, to_bracket: i_help_type) -> str:
         if isinstance(to_bracket, FinalNode):
-            return f'<{to_bracket.help.name}>' if to_bracket.has_lower_limit() else f'[{to_bracket.help.name}]'
+            return f'<{to_bracket.get_help_naming_string()}>' if to_bracket.has_lower_limit() else f'[{to_bracket.get_help_naming_string()}]'
 
 
 class DescriptionBuilder(SectionBuilder):
@@ -215,7 +215,7 @@ class DescriptionBuilder(SectionBuilder):
         return 'Description'
 
     def _build_section(self):
-        return self._root.help.long_description
+        return self._root.get_long_description()
 
 
 class SubHelpBuilder(SectionBuilder, ABC):
@@ -224,9 +224,10 @@ class SubHelpBuilder(SectionBuilder, ABC):
         sub_helps = self._root.get_sub_helps()
         name = self.get_section_name()
         kind = HelpType(name)
-        if kind in sub_helps:
+        try:
             return sub_helps[kind]
-        return []
+        except KeyError:
+            return []
 
     def _build_section(self):
         return reduce(op.add, map(self.build_single_sub_help, self.get_sub_helps()), [])
@@ -235,7 +236,7 @@ class SubHelpBuilder(SectionBuilder, ABC):
         return [sub_help.get_help_naming_string(), self.build_single_sub_help_description(sub_help)]
 
     def build_single_sub_help_description(self, sub_help: IHelp) -> list[str] | str:
-        return [sub_help.help.short_description]
+        return [sub_help.get_short_description()]
 
 
 class ParametersSectionBuilder(SubHelpBuilder):
@@ -254,7 +255,7 @@ class HiddenNodesSectionBuilder(SubHelpBuilder):
 
     def build_single_sub_help(self, sub_help: IHelp) -> list:
         built = super().build_single_sub_help(sub_help)
-        built += [[sub_help.help.synopsis]]
+        built += [[sub_help.get_synopsis()]]
         return built
 
 
@@ -279,6 +280,10 @@ class IHelp(ABC):
     Interface for objects that have help and can be managed by HelpManager
     '''
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._long_description: list[str, ...] = []
+
     @abstractmethod
     def get_help(self) -> Help:
         raise NotImplementedError
@@ -295,18 +300,27 @@ class IHelp(ABC):
         raise NameError
 
     def get_help_naming_string(self):
-        naming = self.help.name or self._get_help_naming()
+        naming = self._get_help_naming()
         if not isinstance(naming, str):
             naming = str(list(naming))[1:-2]
         return naming
 
+    def get_short_description(self) -> str:
+        return self.help.short_description if self.help.short_description is not None else ''
+
+    def get_long_description(self) -> str:
+        return self.help.long_description if self.help.long_description is not None else ''
+
+    def get_synopsis(self) -> str:
+        return self.help.synopsis if self.help.synopsis is not None else ''
+
 
 @dataclass
 class Help:
-    name: str = ''
-    short_description: str = ''
-    long_description: str = ''
-    synopsis: str = ''
+    short_description: str = None
+    long_description: str = None
+    synopsis: str = None
+
 
 ###################
 # Default storage #
@@ -357,7 +371,7 @@ class DefaultStorage(IDefaultStorable):
 ###########################
 
 
-class IActivable(ABC):
+class IActivable(INamable, ABC):
 
     @staticmethod
     def _map_to_single(*to_map: compositeActive, func: bool_from_iterable = all) -> bool_from_void | None:
@@ -414,7 +428,7 @@ class ImplicitlyActivableMixin(IActivable):
         return self._activated
 
 
-class ConditionallyActiveMixin(IActivable):
+class ConditionallyActiveMixin(IActivable, IHelp, ABC):
 
     def __init__(self, active_condition: compositeActive = None, inactive_condition: compositeActive = None, default_state: bool = None, **kwargs):
         super().__init__(**kwargs)
@@ -485,7 +499,7 @@ class ConditionallyActiveMixin(IActivable):
         self.set_inactive_on_conditions(lambda: not len(collection))
 
 
-class ActionOnActivationMixin:
+class ActionOnActivationMixin(INamable, IHelp, ABC):
     T = TypeVar('T')
 
     def __init__(self, **kwargs):
@@ -502,6 +516,7 @@ class ActionOnActivationMixin:
     def when_active_set_activated(self, activated: bool, *to_set: IActivable):
         activate_once = lambda a: a.set_activated(activated)
         self.when_active_apply_for_all(activate_once, to_set)
+        self._long_description.append(f'When {self.name} is activated, it turns {"on" if activated else "off"} {", ".join(map(INamable.get_name, to_set))}')
 
     def when_active_apply_for_all(self, func: Callable[[T], Any], elems: Iterable[T]):
         self.when_active(lambda: (func(elem) for elem in elems))
@@ -540,7 +555,7 @@ class ActionOnActivationMixin:
         return (action for action, cond in self._additional_actions.items() if cond())
 
 
-class ActionOnImplicitActivation(ImplicitlyActivableMixin, ActionOnActivationMixin):
+class ActionOnImplicitActivation(ImplicitlyActivableMixin, ActionOnActivationMixin, ABC):
 
     def __init__(self, activated=False, **kwargs):
         super().__init__(activated=activated, **kwargs)
@@ -551,7 +566,7 @@ class ActionOnImplicitActivation(ImplicitlyActivableMixin, ActionOnActivationMix
         self._perform_additional_actions_on_activation()
 
 
-class ActionOnCondition(ConditionallyActiveMixin, ActionOnActivationMixin):
+class ActionOnCondition(ConditionallyActiveMixin, ActionOnActivationMixin, ABC):
 
     def __init__(self, active_condition: compositeActive = None, inactive_condition: compositeActive = None, **kwargs):
         super().__init__(active_condition=active_condition, inactive_condition=inactive_condition, **kwargs)
@@ -835,7 +850,7 @@ class ParameterManagerMixin(IResetable):
 
 class HiddenNodeManagerMixin:
     def __init__(self, **kwargs):
-        super().__init__()
+        super().__init__(**kwargs)
         self._hidden_nodes: dict[str, HiddenNode] = {}
 
     def add_hidden_node(self, to_add: str | Node, active_condition: Callable[[], bool] = None, action: Callable = None) -> HiddenNode:
@@ -882,11 +897,11 @@ class HiddenNodeManagerMixin:
 #############
 
 
-class Node(INamable, IHelp, ParameterManagerMixin, IResetable, ActionOnActivationMixin, FlagManagerMixin, HiddenNodeManagerMixin):
+class Node(ParameterManagerMixin, IResetable, ActionOnActivationMixin, FlagManagerMixin, HiddenNodeManagerMixin, INamable, IHelp):
 
     def __init__(self, name: str, parameters: Iterable[str | Parameter] = None, param_storages: tuple[CliCollection] = (),
                  short_description: str = '', long_description: str = '', **kwargs):
-        super().__init__(name=name, parameters=parameters, param_storages=param_storages, **kwargs)
+        super().__init__(name=name, parameters=parameters, storages=param_storages, **kwargs)
         self._visible_nodes: dict[str, VisibleNode] = dict()
         self._collections: dict[str, CliCollection] = dict()
         self._actions: dict[bool_from_void, SmartList[any_from_void]] = dict()
@@ -911,7 +926,7 @@ class Node(INamable, IHelp, ParameterManagerMixin, IResetable, ActionOnActivatio
     def _get_help_naming(self) -> Iterable[str] | str:
         return self.get_name()
 
-    def add_general_help_flag_to_all(self, main: str, *alternative_names: str, action: any_from_void) -> None:
+    def add_general_help_flag_to_all(self, main: str, *alternative_names: str, action: any_from_void = None) -> None:
         to_apply = lambda node: node._add_general_flag_to_self(main, *alternative_names, action=action)
         self.apply_to_self_and_all_nodes(to_apply)
 
@@ -1453,6 +1468,12 @@ class Flag(FinalNode, ActionOnImplicitActivation):
 
     def _get_help_naming(self) -> Iterable[str] | str:
         return self.get_all_names()
+
+    def get_long_description(self) -> str:
+        if self.help.long_description is not None:
+            return super().get_long_description()
+        raise NotImplementedError
+
 
     # Reset
 
