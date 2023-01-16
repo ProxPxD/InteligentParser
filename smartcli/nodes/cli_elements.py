@@ -892,6 +892,27 @@ class HiddenNodeManagerMixin:
         return name in self._hidden_nodes
 
 
+class AlternativeNamesMixin(INamable):
+
+    def __init__(self, alternative_names: Iterable[str] = None, **kwargs):
+        super().__init__(**kwargs)
+        self._alternative_names = set(alternative_names or [])
+
+    def add_alternative_names(self, *alternative_names: str):
+        self._alternative_names |= set(alternative_names)
+
+    def has_name(self, name: str):
+        return super().has_name(name) or name in self._alternative_names
+
+    def has_name_in(self, names: Iterable[str]):
+        return any(map(self.has_name, names))
+
+    def get_all_names(self) -> list[str]:
+        return [self._name] + list(self._alternative_names)
+
+    def __hash__(self):
+        return hash((self.name, *self._alternative_names))
+
 #############
 # CLI parts #
 #############
@@ -1009,12 +1030,13 @@ class Node(ParameterManagerMixin, IResetable, ActionOnActivationMixin, FlagManag
         nodes = (self.add_node(to_add, action) for to_add, action in zip_longest(to_adds, actions))
         return tuple(nodes)
 
-    def add_node(self, to_add: str | VisibleNode, action: Callable = None) -> VisibleNode:
+    def add_node(self, to_add: str | VisibleNode, *alternative_names: Iterable[str], action: Callable = None) -> VisibleNode:
         if self._only_hidden:
             raise IncorrectStateError("Tried to add a visible node when only hidden option had been set")
         name, node = get_name_and_object_for_namable(to_add, VisibleNode)
         if name in self._visible_nodes:
             raise ValueAlreadyExistsError(VisibleNode, name)
+        node.add_alternative_names(*alternative_names)
         node.add_action(action)
         self._visible_nodes[name] = node
         return node
@@ -1146,10 +1168,10 @@ class Node(ParameterManagerMixin, IResetable, ActionOnActivationMixin, FlagManag
         return next(iter(self._action_results), None)
 
 
-class VisibleNode(Node, ActionOnImplicitActivation):
+class VisibleNode(Node, ActionOnImplicitActivation, AlternativeNamesMixin):
 
-    def __init__(self, name: str, parameters: Iterable[str | Parameter] = None, param_storages: tuple[CliCollection] = (), **kwargs):
-        super().__init__(name=name, parameters=parameters, param_storages=param_storages, activated=False, **kwargs)
+    def __init__(self, name: str, *alternative_names: str, parameters: Iterable[str | Parameter] = None, param_storages: tuple[CliCollection] = (), **kwargs):
+        super().__init__(name=name, alternative_names=alternative_names, parameters=parameters, param_storages=param_storages, activated=False, **kwargs)
 
 
 class HiddenNode(Node, ActionOnCondition):  # TODO: refactor to remove duplications (active and inactive conditions should be a separate class
@@ -1453,15 +1475,14 @@ class Parameter(FinalNode, ActionOnCondition):
         flag.when_active_turn_off(self)
 
 
-class Flag(FinalNode, ActionOnImplicitActivation):
+class Flag(FinalNode, ActionOnImplicitActivation, AlternativeNamesMixin):
 
     def __init__(self, name, *alternative_names: str, storage: CliCollection = None, storage_limit: int = -1, storage_lower_limit=-1, default: default_type = None, flag_limit=-1, flag_lower_limit=-1):
         if flag_limit == -1:
             limit = storage.get_limit() if storage is not None else storage_limit
             flag_limit = limit if limit != -1 else 0
 
-        super().__init__(name, storage=storage, storage_limit=storage_limit, storage_lower_limit=storage_lower_limit, default=default, local_limit=flag_limit, local_lower_limit=flag_lower_limit, activated=False)
-        self._alternative_names = set(alternative_names)
+        super().__init__(name, alternative_names=alternative_names, storage=storage, storage_limit=storage_limit, storage_lower_limit=storage_lower_limit, default=default, local_limit=flag_limit, local_lower_limit=flag_lower_limit, activated=False)
         self._on_activation: SmartList[Callable] = SmartList()
 
     # Help
@@ -1474,28 +1495,10 @@ class Flag(FinalNode, ActionOnImplicitActivation):
             return super().get_long_description()
         raise NotImplementedError
 
-
     # Reset
 
     def reset(self):
         self.deactivate()
-
-    # Common
-
-    def add_alternative_names(self, *alternative_names: str):
-        self._alternative_names |= set(alternative_names)
-
-    def has_name(self, name: str):
-        return super().has_name(name) or name in self._alternative_names
-
-    def has_name_in(self, names: Iterable[str]):
-        return any(map(self.has_name, names))
-
-    def get_all_names(self) -> list[str]:
-        return [self._name] + list(self._alternative_names)
-
-    def __hash__(self):
-        return hash((self.name, *self._alternative_names))
 
 
 default_type = str | int | list[str | int] | None
