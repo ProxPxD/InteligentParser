@@ -7,8 +7,8 @@ readme_path = main_dir / "README.md"
 LONG_DESCRIPTION = readme_path.read_text() if readme_path.exists() else 'LONG DESCRIPTION'
 
 
-VERSION = '0.1.4'
-DESCRIPTION = 'DESCRIPTION'
+VERSION = '0.1.5'
+DESCRIPTION = 'Cli with a lot of additional functionalities'
 
 # Setting up
 # print(find_packages())
