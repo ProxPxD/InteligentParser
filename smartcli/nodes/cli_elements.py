@@ -363,7 +363,7 @@ class DefaultStorage(IDefaultStorable):
         return len(self._get_defaults) > 0
 
     def get(self) -> Any:
-        to_return = next((get_default() for condition, get_default in reversed(self._get_defaults.items()) if condition()))
+        to_return = next((get_default() for condition, get_default in reversed(self._get_defaults.items()) if condition()))  # TODO: add test for getting exception for empty or no condition met and check functions that use this function
         return to_return
 
 ###########################
