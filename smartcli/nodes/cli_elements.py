@@ -699,7 +699,8 @@ class ParameterManagerMixin(IResetable):
             if not self.has_param(param):
                 self.add_param(param)
 
-    def add_param(self, to_add: str | Parameter | CliCollection, storage: CliCollection = None) -> Parameter:
+    # TODO: add tests for new args
+    def add_param(self, to_add: str | Parameter | CliCollection, storage: CliCollection = None, multi=False, lower_limit=None) -> Parameter:
         if storage is not None and isinstance(to_add, CliCollection):
             raise ValueError
 
@@ -712,6 +713,13 @@ class ParameterManagerMixin(IResetable):
             raise ValueAlreadyExistsError(Parameter, name)
         if storage is not None:
             param.set_storage(storage)
+
+        if multi:
+            if lower_limit:
+                param.set_to_multi(lower_limit)
+            else:
+                param.set_to_multi_at_least_one()
+
         self._params[name] = param
         return param
 
@@ -1043,10 +1051,17 @@ class Node(ParameterManagerMixin, IResetable, ActionOnActivationMixin, FlagManag
 
     def has_visible_node(self, node: str | VisibleNode) -> bool:
         name = get_name(node)
-        return name in self._visible_nodes
+        return any(node_instance.has_name(name) for node_instance in self._visible_nodes.values())
 
     def get_visible_node(self, name: str):
-        return self._visible_nodes[name]
+        try:
+            return self._visible_nodes[name]
+        except KeyError:
+            pass  # Fallback
+        try:
+            return next((node for node in self._visible_nodes.values() if node.has_name(name)))
+        except StopIteration:
+            raise KeyError
 
     def get_visible_nodes(self, *names: str) -> list[VisibleNode]:
         if not names:
