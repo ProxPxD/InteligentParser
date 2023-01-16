@@ -363,7 +363,7 @@ class DefaultStorage(IDefaultStorable):
         return len(self._get_defaults) > 0
 
     def get(self) -> Any:
-        to_return = next((get_default() for condition, get_default in reversed(self._get_defaults.items()) if condition()), None)
+        to_return = next((get_default() for condition, get_default in reversed(self._get_defaults.items()) if condition()))
         return to_return
 
 ###########################
@@ -1244,7 +1244,10 @@ class CliCollection(DefaultStorage, SmartList, INamable, IResetable):
         return to_return
 
     def get_as_list(self) -> list[...]:
-        result = self.get_plain()
+        try:
+            result = self.get_plain()
+        except StopIteration:
+            result = []  # TODO: add test for this
         if isinstance(result, str):
             result = [result]
         if not isinstance(result, Iterable):
@@ -1533,5 +1536,8 @@ def get_name(arg: str | INamable) -> str:
 
 
 def storable_has_value(storable: IDefaultStorable, value: Any):
-    result = storable.get()
-    return result is not None and (result == value or value in result)
+    try:
+        result = storable.get()
+        return result == value or value in result
+    except StopIteration:
+        return False
