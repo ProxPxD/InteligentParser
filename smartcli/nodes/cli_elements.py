@@ -615,13 +615,20 @@ class FlagManagerMixin:
     def get_active_flags(self) -> Iterable[Flag]:
         return filter(Flag.is_active, self._flags)
 
-    def add_flag(self, main: str | Flag, *alternative_names: str, storage: CliCollection = None, storage_limit: int | None = -1, storage_lower_limit=-1, default: default_type = None, flag_limit=-1, flag_lower_limit=-1) -> Flag:
+    def add_flag(self, main: str | Flag, *alternative_names: str, storage: CliCollection = None, storage_limit: int | None = -1, storage_lower_limit=-1, default: default_type = None, flag_limit=-1, flag_lower_limit=-1, multi=False) -> Flag:
         name = get_name(main)
         if self.has_flag(name):
             raise ValueAlreadyExistsError(Flag, name)
         flag = main if isinstance(main, Flag) else Flag(name, *alternative_names, storage=storage, storage_limit=storage_limit,
-                                                        storage_lower_limit=storage_lower_limit, flag_limit=flag_limit, default=default,
+                                                          storage_lower_limit=storage_lower_limit, flag_limit=flag_limit, default=default,
                                                         flag_lower_limit=flag_lower_limit)
+
+        if multi: # TODO: add tests for new args
+            if flag_lower_limit:
+                flag.set_to_multi(flag_lower_limit)
+            else:
+                flag.set_to_multi_at_least_one()
+
         self._flags.append(flag)
         return flag
 
