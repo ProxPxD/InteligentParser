@@ -55,20 +55,21 @@ class Cli(IResetable):
         if isinstance(args, str):
             args = shlex.split(args)
         self.set_args(args)
-        self._args = self._run_args_preprocessing_actions()
-        self._args = self._root.filter_flags_out(self._args)
+        try:
+            self._args = self._run_args_preprocessing_actions()
+            self._args = self._root.filter_flags_out(self._args)
 
-        self._active_nodes = self._get_active_nodes()
-        self._action_node = self._active_nodes[-1]
+            self._active_nodes = self._get_active_nodes()
+            self._action_node = self._active_nodes[-1]
 
-        node_args = self._get_node_args(self._args)
-        node_args = self._action_node.filter_flags_out(node_args)
-        self._used_arity = len(node_args)
-        self._run_pre_parse_actions()  # Because node arguments count can influence it, TODO: think of refactor
-        self._action_node.parse_node_args(node_args)
-        self._run_post_parse_actions()
-
-        self._is_reset_needed = True
+            node_args = self._get_node_args(self._args)
+            node_args = self._action_node.filter_flags_out(node_args)
+            self._used_arity = len(node_args)
+            self._run_pre_parse_actions()  # Because node arguments count can influence it, TODO: think of refactor
+            self._action_node.parse_node_args(node_args)
+            self._run_post_parse_actions()
+        finally:
+            self._is_reset_needed = True
 
     def _run_args_preprocessing_actions(self) -> list[str]:
         for action in self._get_active_actions(self._args_preprocessing_actions):
