@@ -715,20 +715,22 @@ class ParameterManagerMixin(IResetable):
             storage = to_add
             to_add = to_add.name
 
-        name, param = get_name_and_object_for_namable(to_add, Parameter)
+        if isinstance(to_add, str):
+            to_add = Parameter(to_add, storage=storage)
+
+        name = to_add.name
+
         if name in self._params:
             raise ValueAlreadyExistsError(Parameter, name)
-        if storage is not None:
-            param.set_storage(storage)
 
         if multi:
             if lower_limit:
-                param.set_to_multi(lower_limit)
+                to_add.set_to_multi(lower_limit)
             else:
-                param.set_to_multi_at_least_one()
+                to_add.set_to_multi_at_least_one()
 
-        self._params[name] = param
-        return param
+        self._params[name] = to_add
+        return to_add
 
     def set_possible_param_order(self, line: str) -> None:
         params = line.split(' ') if len(line) else []
