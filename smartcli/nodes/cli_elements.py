@@ -430,7 +430,7 @@ class ImplicitlyActivableMixin(IActivable):
 
 class ConditionallyActiveMixin(IActivable, IHelp, ABC):
 
-    def __init__(self, active_condition: compositeActive = None, inactive_condition: compositeActive = None, default_state: bool = None, **kwargs):
+    def __init__(self, active_condition: compositeActive = None, inactive_condition: compositeActive = None, default_state: bool = False, **kwargs):
         super().__init__(**kwargs)
         self._active_conditions = SmartList(self._map_to_single(active_condition)) if active_condition else SmartList()
         self._inactive_conditions = SmartList(self._map_to_single(inactive_condition)) if inactive_condition else SmartList()
