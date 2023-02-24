@@ -15,16 +15,27 @@ class Cli(IResetable):
             root = Root(root)
         self._root: Root = root or Root()
         self._args: list = args or []
+        self._out = out
         self._active_nodes = []
         self._action_node: Node = None
         self._is_reset_needed = False
         self._used_arity = 0
+        self._post_flag_parsing_actions: dict[bool_from_void, any_from_void] = {}
         self._pre_parse_actions: dict[bool_from_void, any_from_void] = {}
         self._post_parse_actions: dict[bool_from_void, any_from_void] = {}
         self._args_preprocessing_actions: dict[bool_from_void, Callable[[list[str]], Any]] = {}
 
+    @property
+    def out(self):
+        return self._out
+
+    @out.setter
+    def out(self, to_set):
+        self.set_out_stream(to_set)
+
     def set_out_stream(self, out):
-        self.root.help_manager.set_out_stream(out)
+        self._out = out
+        self.root.help_manager.set_out_stream(self._out)
 
     def print_help(self, out=None):
         self.root.help_manager.print_help(out=out)
@@ -58,6 +69,8 @@ class Cli(IResetable):
         try:
             self._args = self._run_args_preprocessing_actions()
             self._args = self._root.filter_flags_out(self._args)
+            self._used_arity = len(self._args) - 1
+            self._run_post_flag_parse_actions()
 
             self._active_nodes = self._get_active_nodes()
             self._action_node = self._active_nodes[-1]
@@ -102,6 +115,9 @@ class Cli(IResetable):
     def _get_node_arguments_count(self) -> int:
         return self._used_arity
 
+    def _run_post_flag_parse_actions(self) -> None:
+        self._run_actions(self._get_active_post_flag_parsing_actions())
+
     def _run_pre_parse_actions(self) -> None:
         self._run_actions(self._get_active_pre_parse_actions())
 
@@ -111,6 +127,9 @@ class Cli(IResetable):
     def _run_actions(self, actions: Iterable[Callable]) -> None:
         for action in actions:
             action()
+
+    def _get_active_post_flag_parsing_actions(self) -> Iterable[Callable]:
+        return self._get_active_actions(self._post_flag_parsing_actions)
 
     def _get_active_pre_parse_actions(self) -> Iterable[Callable]:
         return self._get_active_actions(self._pre_parse_actions)
@@ -131,6 +150,10 @@ class Cli(IResetable):
                 resetable.reset()
             self._is_reset_needed = False
             self._used_arity = 0
+
+    # TODO: test for it
+    def add_post_flag_parsing_action_when(self, action: any_from_void, condition: bool_from_void) -> None:
+        self._post_flag_parsing_actions[condition] = action
 
     # Arity conds TODO: add tests
 

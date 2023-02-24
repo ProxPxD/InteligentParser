@@ -477,11 +477,11 @@ class ConditionallyActiveMixin(IActivable, IHelp, ABC):
     def set_inactive_on_flags(self, *flags: Flag, func=any):
         self.set_inactive_on_conditions(lambda: func([flag.is_active() for flag in flags]))
 
-    def set_active_on_flags_in_collection(self, collection: CliCollection, *flags: Flag, but_not: list[Flag] | Flag = None):
+    def set_active_on_flags_in_collection(self, collection: CliCollection, *flags: Flag, but_not: list[Flag] | Flag = None, func=all, but_not_func=any):
         but_not = but_not or []
         but_not = [but_not] if isinstance(but_not, Flag) else but_not
-        self.set_active_on_conditions(lambda: all((flag in collection for flag in flags)))
-        self.set_inactive_on_flags_in_collection(collection, *but_not, func=any)
+        self.set_active_on_conditions(lambda: func((flag in collection for flag in flags)))
+        self.set_inactive_on_flags_in_collection(collection, *but_not, func=but_not_func)
 
     def set_inactive_on_flags_in_collection(self, collection: CliCollection, *flags: Flag, func=all):
         self.set_inactive_on_conditions(lambda: func((flag in collection for flag in flags)))
